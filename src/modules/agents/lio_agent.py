@@ -4,67 +4,88 @@ import torch.nn.functional as F
 import math
 
 
-class LIOAgent(nn.Module):
-    def __init__(self, input_shape, args):#input_shape = obs
-        super(LIOAgent, self).__init__()
-        self.args = args
-        self.n_agents = args.n_agents
-        self.n_actions = args.n_actions
+class LioAgent(nn.Module):
+    def __init__(self, input_shape, args_env, args_alg):
+        super(LioAgent, self).__init__()
+        self.args_env = args_env
+        self.args_alg = args_alg
+        self.n_agents = args_env.num_agents
+        self.n_actions = args_env.num_actions
         self.input_shape = input_shape
 
         #********************************************* actor ****************************************************************#
-        #不知道卷积具体多大
+
         self.conv_to_fc_actor = nn.Sequential(
-                nn.Conv2d(3, args.conv_out, args.conv_kernel, args.conv_stride),
-                nn.LeakyReLU(),
+                nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
+                nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(args.conv_out * (args.obs_dims[0] - args.conv_kernel + 1) * (
-                        args.obs_dims[1] - args.conv_kernel + 1), args.obs_dim_net),
-                nn.LeakyReLU()
+                nn.Linear(args_alg.n_filters * (args_env.obs_height - args_alg.kernel[0] + 1) * (
+                        args_env.obs_width - args_alg.kernel[1] + 1), args_alg.n_h1),
+                nn.ReLU()
             )
 
-        self.fc1_actor = nn.Linear(args.obs_dim_net, args.rnn_hidden_dim)
+        self.fc1_actor = nn.Sequential(
+                nn.Linear(input_shape, args_alg.n_h1), 
+                nn.ReLU()
+            )   
 
-        self.fc2_actor = nn.Linear(input_shape, args.rnn_hidden_dim)
-
-        self.rnn_actor = nn.GRUCell(args.rnn_hidden_dim, args.rnn_hidden_dim)
-        self.fc3_actor = nn.Linear(args.rnn_hidden_dim, self.n_actions)
+        self.fc2_actor = nn.Sequential(
+                nn.Linear(args_alg.n_h1, args_alg.n_h2),
+                nn.ReLU()
+            )
+        
+        self.fc3_actor = nn.Linear(args_alg.n_h2, self.n_actions)
 
         #********************************************* reward *************************************************************#
         
         self.conv_to_fc_reward = nn.Sequential(
-                nn.Conv2d(3, args.conv_out, args.conv_kernel, args.conv_stride),
-                nn.LeakyReLU(),
+                nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
+                nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(args.conv_out * (args.obs_dims[0] - args.conv_kernel + 1) * (
-                        args.obs_dims[1] - args.conv_kernel + 1), args.obs_dim_net),
-                nn.LeakyReLU()
+                nn.Linear(args_alg.n_filters * (args_env.obs_height - args_alg.kernel[0] + 1) * (
+                        args_env.obs_width - args_alg.kernel[1] + 1), args_alg.n_h1),
+                nn.ReLU()
             )
         
-        self.fc1_reward = nn.Linear(args.obs_dim_net + self.n_agents - 1, args.rnn_hidden_dim)
+        self.fc1_reward = nn.Sequential(
+                nn.Linear(args_env.n_h1 + self.n_agents - 1, args_env.n_h2),
+                nn.ReLU()
+            )
 
-        self.fc2_reward = nn.Linear(input_shape + self.n_agents - 1, args.rnn_hidden_dim)
+        self.fc2_reward = nn.Sequential(
+            nn.Linear(input_shape + self.n_agents - 1, args_env.n_h1),
+            nn.ReLU()
+            )
         
-        self.rnn_reward = nn.GRUCell(args.rnn_hidden_dim, args.rnn_hidden_dim)
-        self.fc3_reward = nn.Linear(args.rnn_hidden_dim, self.n_agents-1)
+        self.fc3_reward = nn.Sequential(
+            nn.Linear(args_alg.n_h1, args_alg.n_h2),
+            nn.ReLU()
+            )
+
+        self.fc4_reward = nn.Linear(args_alg.n_h2, self.n_agents-1)
 
         #********************************************** value ******************************************************************#
 
         self.conv_to_fc_value = nn.Sequential(
-                nn.Conv2d(3, args.conv_out, args.conv_kernel, args.conv_stride),
-                nn.LeakyReLU(),
+                nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
+                nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(args.conv_out * (args.obs_dims[0] - args.conv_kernel + 1) * (
-                        args.obs_dims[1] - args.conv_kernel + 1), args.obs_dim_net),
-                nn.LeakyReLU()
+                nn.Linear(args_alg.n_filters * (args_env.obs_height - args_alg.kernel[0] + 1) * (
+                        args_env.obs_width - args_alg.kernel[1] + 1), args_alg.n_h1),
+                nn.ReLU()
+            )
+
+        self.fc1_value = nn.Sequential(
+                nn.Linear(input_shape, args_alg.n_h1), 
+                nn.ReLU()
+            )   
+
+        self.fc2_value = nn.Sequential(
+                nn.Linear(args_alg.n_h1, args_alg.n_h2),
+                nn.ReLU()
             )
         
-        self.fc1_value = nn.Linear(args.obs_dim_net, args.rnn_hidden_dim)
-        
-        self.fc2_value = nn.Linear(input_shape, args.rnn_hidden_dim)
-        
-        self.rnn_value = nn.GRUCell(args.rnn_hidden_dim, args.rnn_hidden_dim)
-        self.fc3_value = nn.Linear(args.rnn_hidden_dim, 1)
+        self.fc3_value = nn.Linear(args_alg.n_h2, 1)
 
     def parameters_actor(self):
         params = []
@@ -90,57 +111,39 @@ class LIOAgent(nn.Module):
 
         return params
 
-    def init_hidden(self): #不知道hidden的具体尺寸
-        h_actor = self.fc1_actor.weight.new_zeros(1, self.n_agents, 1, self.args.rnn_hidden_dim).detach()
-        h_reward = self.fc1_reward.weight.new_zeros(1, self.n_agents, 1, self.args.rnn_hidden_dim).detach()
-        h_value = self.fc1_value.weight.new_zeros(1, self.n_agents, 1, self.args.rnn_hidden_dim).detach()
-        return h_actor, h_reward, h_value
-
-    def forward_actor(self, inputs, hidden_state=None):
+    def forward_actor(self, inputs):
         if self.args.rgb_input:
-            inputs = self.conv_to_fc_actor(inputs)
-        inputs = inputs.reshape(-1, self.n_agents, 1, self.input_shape)
-        if self.args.rgb_input:
+            x = self.conv_to_fc_actor(inputs)
+        else:
             x = self.fc1_actor(inputs)
-        else: 
-            x = self.fc2_actor(inputs)
-        if hidden_state is not None:
-            hidden_state = hidden_state.reshape(-1, self.n_agents, 1, self.args.rnn_hidden_dim)
-        x = self.rnn_actor(x, hidden_state)
-        action = F.softmax(self.fc3_actor(x), dim=-1)
+        x = self.fc2_actor(x)
+        action = self.fc3_actor(x)
 
-        return action, x
+        return action  # logits rather than probs
 
-    def forward_reward(self, inputs, actions, hidden_state=None):
+    def forward_reward(self, inputs, actions):
         if self.args.rgb_input:
-            inputs = self.conv_to_fc_reward(inputs)
-        inputs = inputs.reshape(-1, self.n_agents, 1, self.input_shape)
-        actions = actions.reshape(-1, self.n_agents, 1, self.n_actions)
-        x = th.cat([inputs, actions], dim=-1)
-        if self.args.rgb_input:
+            x = self.conv_to_fc_reward(inputs)
+            x = th.cat([x, actions], dim=-1)
             x = self.fc1_reward(x)
         else:
+            x = th.cat([x, actions], dim=-1)
             x = self.fc2_reward(x)
-        if hidden_state is not None:
-            hidden_state = hidden_state.reshape(-1, self.n_agents, 1, self.args.rnn_hidden_dim)
-        x = self.rnn_reward(x, hidden_state)
-        reward = th.sigmoid(self.fc3_reward(x))
+            x = self.fc3_reward(x)
+        reward = th.sigmoid(self.fc4_reward(x))
 
-        return reward, x
+        return reward
     
-    def forward_value(self, inputs, hidden_state=None):
+    def forward_value(self, inputs):
         if self.args.rgb_input:
-            inputs = self.conv_to_fc_value(inputs)
-        inputs = inputs.reshape(-1, self.n_agents, 1, self.input_shape)
-        if self.args.rgb_input:
-            x = self.fc1_value(inputs)
+            x = self.conv_to_fc_value(inputs)
         else:
-            x = self.fc2_value(inputs)
-        if hidden_state is not None:
-            hidden_state = hidden_state.reshape(-1, self.n_agents, 1, self.args.rnn_hidden_dim)
-        x = self.rnn_value(x, hidden_state)
+            x = self.fc1_value(inputs)
+        x = self.fc2_value(x)
         value = self.fc3_value(x)
 
-        return value, x
+        return value
     
+
+
 
