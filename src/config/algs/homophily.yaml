@@ -1,0 +1,56 @@
+# --- specific parameters ---
+
+# action selector
+mask_before_softmax: False
+
+action_selector: "epsilon_greedy"
+epsilon_start: 1.0
+epsilon_finish: 0.05
+epsilon_anneal_time: 50000 # 100000
+epsilon_zero: # None(empty): never zero; 1e6: 1M
+
+buffer_size: 5000 # 12
+batch_size_run: 1
+batch_size: 16 # 8
+test_nepisode: 4
+test_interval: 200 # steps
+
+runner: "episode"
+
+# use the actor critic to train
+agent_output_type: "q" # pi_logits,
+
+name: "homophily"
+learner: "homophily_learner"
+mixer:  # Mixer becomes None
+mac: "homophily_mac"
+agent: "homophily"
+double_q: True
+
+# update the target network every {} episodes
+target_update_interval: 20 # episodes
+
+gamma_env: 0.95
+gamma_inc: 0.995
+lr_env: 0.001
+lr_inc: 0.001
+
+n_inc_actions: 3 # 0,1,2 = NO, +, -
+consider_others_inc: False
+
+# algorithms
+incentive: True
+incentive_ratio: 1.0
+incentive_cost:  0.1
+
+sim_loss_weight: 0.01
+sim_threshold: 0.7
+sim_horizon: 10
+
+use_cuda: True
+save_model: True # Save the models to disk
+save_model_interval: 10000 #100000 # Save models after this many timesteps
+log_interval: 1000 # Log summary of stats after every {} timesteps
+runner_log_interval: 1000 # Log runner stats (not test stats) every {} timesteps
+learner_log_interval: 1000 # Log training stats every {} timesteps
+use_tensorboard: True
