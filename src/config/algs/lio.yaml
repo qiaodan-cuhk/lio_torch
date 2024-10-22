@@ -37,8 +37,9 @@ gamma_inc: 0.995
 lr_env: 1e-4
 lr_inc: 1e-5
 
-n_inc_actions: 3 # 0,1,2 = NO, +, -
-consider_others_inc: False
+# homophily params，用不到
+# n_inc_actions: 3 # 0,1,2 = NO, +, -
+# consider_others_inc: False
 
 # algorithms
 incentive: False

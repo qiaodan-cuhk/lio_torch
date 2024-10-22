@@ -106,10 +106,13 @@ def run_sequential(args, logger):
         "agent_pos": {"vshape": (args.n_agents, 2)},
         "agent_orientation": {"vshape": (args.n_agents, 2)},
     }
+
+    # args.name = homophily/lio , 这个param在algs.yaml里
     if 'homophily' in args.name:
         scheme.update({
             "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
         })
+        
 
     groups = {
         "agents": args.n_agents
