@@ -5,12 +5,13 @@ import math
 
 
 class LioAgent(nn.Module):
-    def __init__(self, input_shape, args_env, args_alg):
+    def __init__(self, input_shape, agent_id, args_env, args_alg):
         super(LioAgent, self).__init__()
         self.args_env = args_env
         self.args_alg = args_alg
         self.n_agents = args_env.num_agents
         self.n_actions = args_env.num_actions
+        self.agent_id = agent_id
         self.input_shape = input_shape
 
         #********************************************* actor ****************************************************************#
