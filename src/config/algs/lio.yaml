@@ -2,7 +2,7 @@
 # --- specific parameters ---
 # action selector
 mask_before_softmax: False
-action_selector: "epsilon_greedy"
+action_selector: "multinomial"
 epsilon_start: 0.5
 epsilon_finish: 0.05
 epsilon_anneal_time: 50000 # 100000
