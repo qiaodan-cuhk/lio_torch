@@ -96,3 +96,4 @@ class LIOMAC(nn.Module):
 
         inputs = th.cat([x.transpose(0, 1) for x in inputs], dim=-1)
         return inputs # [n,bs,-1]
+

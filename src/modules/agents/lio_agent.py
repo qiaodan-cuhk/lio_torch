@@ -15,6 +15,7 @@ class LioAgent(nn.Module):
         self.input_shape = input_shape
 
         #********************************************* actor ****************************************************************#
+        #不知道卷积具体多大, 参数从 alg/lio.yaml 中获取
 
         self.conv_to_fc_actor = nn.Sequential(
                 nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),

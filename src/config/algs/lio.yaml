@@ -1,41 +1,56 @@
 """ LIO Actor Critic Params"""
 # --- specific parameters ---
+
 # action selector
 mask_before_softmax: False
 action_selector: "multinomial"
+
+
 epsilon_start: 0.5
 epsilon_finish: 0.05
 epsilon_anneal_time: 50000 # 100000
 epsilon_zero: # None(empty): never zero; 1e6: 1M
+
 buffer_size: 5000 # 12
 batch_size_run: 1
 batch_size: 16 # 8
 test_nepisode: 4
 test_interval: 200 # steps
+
+
 runner: "episode"
 # use the actor critic to train
 agent_output_type: "q" # pi_logits,
+
+
 name: "lio"
 learner: "lio_learner"
 mixer:  # Mixer becomes None
 mac: "lio_mac"
 agent: "lio"
 double_q: True
+
 # update the target network every {} episodes
 target_update_interval: 20 # episodes
+
 gamma_env: 0.99
 gamma_inc: 0.995
 lr_env: 1e-4
 lr_inc: 1e-5
+
 n_inc_actions: 3 # 0,1,2 = NO, +, -
 consider_others_inc: False
+
+
 # algorithms
 incentive: False
 incentive_ratio: 1.0
 incentive_cost:  0.1
+
 sim_loss_weight: 0.01
 sim_threshold: 0.7
 sim_horizon: 10
+
 use_cuda: True
 save_model: True # Save the models to disk
 save_model_interval: 100000 #100000 # Save models after this many timesteps
@@ -43,12 +58,15 @@ log_interval: 1000 # Log summary of stats after every {} timesteps
 runner_log_interval: 1000 # Log runner stats (not test stats) every {} timesteps
 learner_log_interval: 1000 # Log training stats every {} timesteps
 use_tensorboard: True
+
 # other lio params
 entropy_coeff: 0.1
 asymmetric: false
 idx_recipient: 0  # only used if asymmetric=True
 budget_constraint: false
 include_cost_in_chain_rule: false
+
+
 lr_actor: 1e-4
 lr_cost: 1e-5
 lr_opp: 1e-3
@@ -60,6 +78,8 @@ reg_coeff: 1e-4  # float, or 'linear', or 'adaptive'
 separate_cost_optimizer: false
 tau: 0.01
 use_actor_critic: true
+
+
 # Network Params
 kernel: [3, 3]
 n_filters: 6
@@ -67,12 +87,16 @@ n_h1: 64
 n_h2: 64
 n_h: 128
 stride: [1, 1]
+
+
 # # Projects/lio/lio/alg/config_ssd_lio.yaml
 # alg:
 #   n_episodes: 50000
 #   n_eval: 10
 #   n_test: 3
 #   period: 1000
+
+
 # main:
 #   dir_name: 'small_n2_lio'
 #   exp_name: 'cleanup'
@@ -82,3 +106,4 @@ stride: [1, 1]
 #   save_threshold: 40
 #   seed: 12340
 #   summarize: false
+
