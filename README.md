@@ -4,6 +4,13 @@ This repo is based on homo-lio code with pymarl framework. We adapt LIO from tf 
 #### Update Version
 - v0.1 2024.10.22 Add lio_agent.py, lio_mac.py, modify train.py of LIO in pymarl.
 
+- v0.2 2024.10.28 Add lio_learner. 
+
+#### ToDo List
+- lio_controller line 74/74 有问题
+- lio_controller 里的 select reward incentive 函数没写
+- 需要考虑新写一个lio runner来控制buffer和reward
+
 #### Contributiors:
 - Jianing Yanglu
 - Dan

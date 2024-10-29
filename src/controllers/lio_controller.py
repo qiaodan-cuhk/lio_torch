@@ -24,7 +24,7 @@ class LIOMAC(nn.Module):
         self.mask.fill_diagonal_(False)
         self.mask_ = self.mask.unsqueeze(0)  # [1,n,n]
 
-    def select_actions_actor(self, ep_batch, t_ep, t_env, bs=slice(None), test_mode=False):
+    def select_actions_env(self, ep_batch, t_ep, t_env, bs=slice(None), test_mode=False):
         # Only select actions for the selected batch elements in bs
         avail_actions = ep_batch["avail_actions"][:, t_ep]
         policies = self.forward_actor(ep_batch, t_ep, test_mode=test_mode) # [bs,n,num_action]
@@ -32,6 +32,29 @@ class LIOMAC(nn.Module):
         chosen_actions = self.action_selector.select_action(policies[bs], masks , t_env, test_mode=test_mode)
         return chosen_actions
         # [bs,n]
+
+    def select_actions_env_prime(self, ep_batch, t_ep, t_env, bs=slice(None), test_mode=False):
+        # 使用 prime policy 采样动作
+    
+        avail_actions = ep_batch["avail_actions"][:, t_ep]
+
+
+        policies = self.forward_actor_prime(ep_batch, t_ep, test_mode=test_mode) # [bs,n,num_action]
+
+
+        masks = avail_actions[bs] # [bs,n,num_action]
+        chosen_actions = self.action_selector.select_action(policies[bs], masks , t_env, test_mode=test_mode)
+        return chosen_actions
+        # [bs,n]
+
+
+
+    def select_actions_inc():   
+
+        return incentive_reward_action ?
+    
+
+
 
     def expand_rewards_batch(self, rewards):
         bs, _, _ = rewards.size()
@@ -54,6 +77,18 @@ class LIOMAC(nn.Module):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         policies = th.concat([self.agents[i].forward_actor(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
         return policies.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
+    
+    """ prime policy sampling """
+    def forward_actor_prime(self, ep_batch, t, test_mode=False, learning_mode=False):
+        self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
+
+
+        policies = th.concat([self.agents[i].forward_actor_prime(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
+
+
+        return policies.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
+    
+
     
     def forward_value(self, ep_batch, t, test_mode=False, learning_mode=False):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]

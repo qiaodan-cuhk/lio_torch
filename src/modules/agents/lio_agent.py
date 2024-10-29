@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-
-class LioAgent(nn.Module):
+""" 需要新增一个 prime policy 和 self.policy gradient 存储 grad """
+class LIOAgent(nn.Module):
     def __init__(self, input_shape, agent_id, args_env, args_alg):
-        super(LioAgent, self).__init__()
+        super(LIOAgent, self).__init__()
         self.args_env = args_env
         self.args_alg = args_alg
         self.n_agents = args_env.num_agents
@@ -122,6 +122,19 @@ class LioAgent(nn.Module):
         action = self.fc3_actor(x)
 
         return action  # logits rather than probs
+    
+    # 用于 prime policy 采样
+    def forward_actor_prime(self, inputs):
+        if self.args.rgb_input:
+            # x = self.conv_to_fc_actor(inputs)
+        else:
+            # x = self.fc1_actor(inputs)
+        # x = self.fc2_actor(x)
+        # action = self.fc3_actor(x)
+
+        return action  # logits rather than probs
+    
+
 
     def forward_reward(self, inputs, actions):
         if self.args.rgb_input:
