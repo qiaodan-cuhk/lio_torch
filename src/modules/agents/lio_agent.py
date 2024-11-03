@@ -158,6 +158,27 @@ class LIOAgent(nn.Module):
         value = self.fc3_value(x)
 
         return value
+
+    def initialize_reg_coeff(self):
+        """初始化正则化系数"""
+        if isinstance(self.config.lio.reg_coeff, float):
+            return self.config.lio.reg_coeff
+        else:
+            if self.config.lio.reg_coeff == 'linear':
+                self.reg_coeff_step = 1.0 / self.config.alg.n_episodes
+            elif self.config.lio.reg_coeff == 'adaptive':
+                return 0.0  # 适应性正则化系数初始为0
+            return 0.0
+
+
+    def update_reg_coeff(self, performance, prev_reward_env):
+        """更新正则化系数，用于 incentive reward 的gain作为loss """
+        if self.config.lio.reg_coeff == 'adaptive':
+            sign = 1 if performance > prev_reward_env else -1
+            self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
+        elif self.config.lio.reg_coeff == 'linear':
+            self.reg_coeff = min(1.0, self.reg_coeff + self.reg_coeff_step)
+
     
 
 

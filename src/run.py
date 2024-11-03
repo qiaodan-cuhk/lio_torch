@@ -109,23 +109,22 @@ def run_sequential(args, logger):
     }
 
     # args.name = homophily/lio , 这个param在algs.yaml里
-    if 'homophily' in args.name:
+    # if 'homophily' in args.name:
+    #     scheme.update({
+    #         "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
+    #     })
+    if 'lio' in args.name:
         scheme.update({
             "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
         })
-    elif 'lio' in args.name:
-        scheme.update({
-            "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
-        })
-        
+    # 这个信息真的用的到吗？  
 
     groups = {
         "agents": args.n_agents
     }
 
-
-    """如果需要onehot再转"""
-    if need_onehot: ?
+    """如果需要onehot再preprocess"""
+    if args.onehot_actions:
         preprocess = {
             "actions": ("actions_onehot", [OneHot(out_dim=args.n_actions if not args.action_double else args.n_actions * 2)])
         }
@@ -201,20 +200,17 @@ def run_sequential(args, logger):
 
         # buffer数量不够的时候，策略无法更新，自然无法执行reward inc的更新
         if buffer.can_sample(args.batch_size):
-            episode_sample = buffer.sample(args.batch_size)
-            """这里考虑检查sample，不过用A2C训练，其实也还好，不像PG"""
 
+            episode_sample = buffer.sample(args.batch_size)
             # Truncate batch to only filled timesteps
             max_ep_t = episode_sample.max_t_filled()
             episode_sample = episode_sample[:, :max_ep_t]
             if episode_sample.device != args.device:
                 episode_sample.to(args.device)
             
-            # 考虑是否把 runner 传进去
-            learner.train(episode_sample, runner.t_env, episode)
-            # 这里面会有一个 agent.new_policy = policy.opt.step()，
+
+            learner.train(episode_sample, runner.t_env)
             # 在 train 里要考虑 reward 的增加和减少，update value func + policy func + target func
-            # 当前 actor policy 已经更新到 prime policy，并且存储了 self.policy gradient
 
             # 这里需要用 new/prime policy 采样轨迹，以及 policy 计算 other obs
             episode_batch_new = runner.run(test_mode=False, prime=True)
@@ -227,10 +223,10 @@ def run_sequential(args, logger):
                 new_episode_sample.to(args.device)
 
             # 更新 reward inc policy，并且把 prime policy 赋值给 policy
-            learner.train_reward(episode_sample, new_episode_sample, epsilon, reg_coeff=1e-3)
+            # epsilon & reg_coeff 考虑放到LIO agent里，或者runner里，每个time step直接进行decaying，加一个参数控制
+            learner.train_reward(episode_sample, new_episode_sample, runner.t_env)
 
         """新增部分结束"""
-
         # Execute test runs once in a while
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:

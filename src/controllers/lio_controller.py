@@ -37,8 +37,6 @@ class LIOMAC(nn.Module):
         # 使用 prime policy 采样动作
     
         avail_actions = ep_batch["avail_actions"][:, t_ep]
-
-
         policies = self.forward_actor_prime(ep_batch, t_ep, test_mode=test_mode) # [bs,n,num_action]
 
 

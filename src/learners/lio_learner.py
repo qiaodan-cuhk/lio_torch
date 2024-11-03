@@ -15,17 +15,7 @@ class LIOLearner:
         self.mac = mac
         self.logger = logger
 
-    def initialize_reg_coeff(self):
-        """初始化正则化系数"""
-        if isinstance(self.config.lio.reg_coeff, float):
-            return self.config.lio.reg_coeff
-        else:
-            if self.config.lio.reg_coeff == 'linear':
-                self.reg_coeff_step = 1.0 / self.config.alg.n_episodes
-            elif self.config.lio.reg_coeff == 'adaptive':
-                return 0.0  # 适应性正则化系数初始为0
-            return 0.0
-        
+    
     def create_agents(self):
         """创建和初始化代理"""
         from lio_ac import LIO
@@ -43,8 +33,8 @@ class LIOLearner:
                 agent.create_critic_train_op()
             agent.create_reward_train_op()
 
-    def train(self, sess, epsilon):
-        """训练过程，包括更新策略和奖励训练"""
+    def train(self, buffers, t_env):
+        """ 训练过程，包括更新策略和奖励训练 """
         for idx, agent in enumerate(self.list_agents):
             self.optimizers[idx].zero_grad()  # 清空梯度
             agent.update(sess, list_buffers[idx], epsilon)  # 更新策略
@@ -62,19 +52,14 @@ class LIOLearner:
         # self.policy 不用step，prime policy去step
         self.prime_policy.optimizer.step()
 
+        # 会用于更新 reward inc learning，detach 掉
+        self.policy_grad.detach()
+
         
-
-    def update_reg_coeff(self, performance, prev_reward_env):
-        """更新正则化系数"""
-        if self.config.lio.reg_coeff == 'adaptive':
-            sign = 1 if performance > prev_reward_env else -1
-            self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
-        elif self.config.lio.reg_coeff == 'linear':
-            self.reg_coeff = min(1.0, self.reg_coeff + self.reg_coeff_step)
-
-
-    def train_reward(self, episode_sample, new_episode_sample, epsilon, reg_coeff=1e-3):
+    def train_reward(self, buffer, new_buffer, t_env):
         """训练奖励函数"""
+
+        self.reg_coeff = update(t_env)
 
         if agent.can_give:
 
@@ -82,7 +67,7 @@ class LIOLearner:
         for agent in self.list_agents:
             if agent.agent_id == self.agent_id:
                 continue
-            buf_other = list_buf[agent.agent_id]
+            buf_other = buffer[agent.agent_id]
             n_steps = len(buf_other.obs)
 
             # 使用PyTorch计算v_next和v

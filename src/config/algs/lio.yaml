@@ -5,6 +5,7 @@
 mask_before_softmax: False
 action_selector: "multinomial"
 
+onehot_actions: false
 
 epsilon_start: 0.5
 epsilon_finish: 0.05
@@ -18,7 +19,7 @@ test_nepisode: 4
 test_interval: 200 # steps
 
 
-runner: "episode"
+runner: "episode_lio"
 # use the actor critic to train
 agent_output_type: "q" # pi_logits,
 
