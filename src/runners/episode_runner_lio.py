@@ -57,6 +57,7 @@ class EpisodeRunner_LIO:
 
         while not terminated:
 
+            # transition 之前的信息
             pre_transition_data = {
                 "state": [self.env.get_state()],
                 "avail_actions": [self.env.get_avail_actions()],
@@ -88,15 +89,21 @@ class EpisodeRunner_LIO:
                 "clean_num": [(env_info["clean_num"],)],
                 "apple_den": [(env_info["apple_den"],)],
             }
+            self.batch.update(post_transition_data, ts=self.t)
+
+
+            # 给激励，mac里并没有写如何给一个batch奖励的函数，所以我们为了灵活性，在这里实现
             if 'lio' in self.args.name:
-                self.batch.update(post_transition_data, ts=self.t)
-                actions_inc = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode, agent_pos_replay = self.env.get_agent_pos())
-                post_transition_data = {
-                    "actions_inc": actions_inc,
+                recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+                                                        t_env=self.t_env, test_mode=test_mode,
+                                                        agent_pos_replay = self.env.get_agent_pos())
+                # recieved代表每个人接收到的总奖励，give代表每个agent具体给了谁多少奖励
+
+                incentivize_data = {
+                    "recieved_rewards": recieved_rewards,
+                    "give_other_rewards_list": give_rewards_list,
                 }
-                self.batch.update(post_transition_data, ts=self.t)
-            else:
-                self.batch.update(post_transition_data, ts=self.t)
+                self.batch.update(incentivize_data, ts=self.t)
 
             self.t += 1
 
@@ -117,16 +124,17 @@ class EpisodeRunner_LIO:
             else:
                 actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
             # actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-            actions_inc = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode,agent_pos_replay = self.env.get_agent_pos())
-
-            self.batch.update({
-                "actions_inc": actions_inc,
-            }, ts=self.t)
+            recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+                                                        t_env=self.t_env, test_mode=test_mode,
+                                                        agent_pos_replay = self.env.get_agent_pos())
+            self.batch.update({ "recieved_rewards": recieved_rewards, "give_other_rewards_list": give_rewards_list,}, ts=self.t)
         else:
             actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
 
         self.batch.update({ "actions": actions,}, ts=self.t)
+        
 
+        
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = "test_" if test_mode else ""

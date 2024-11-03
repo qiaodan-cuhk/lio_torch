@@ -81,6 +81,7 @@ def evaluate_sequential(args, runner):
 
 def run_sequential(args, logger):
 
+
     # Init runner so we can get env info
     runner = r_REGISTRY[args.runner](args=args, logger=logger)
 
@@ -108,16 +109,11 @@ def run_sequential(args, logger):
         "agent_orientation": {"vshape": (args.n_agents, 2)},
     }
 
-    # args.name = homophily/lio , 这个param在algs.yaml里
-    # if 'homophily' in args.name:
-    #     scheme.update({
-    #         "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
-    #     })
+
     if 'lio' in args.name:
         scheme.update({
             "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
-        })
-    # 这个信息真的用的到吗？  
+        }) 
 
     groups = {
         "agents": args.n_agents
@@ -208,9 +204,9 @@ def run_sequential(args, logger):
             if episode_sample.device != args.device:
                 episode_sample.to(args.device)
             
-
-            learner.train(episode_sample, runner.t_env)
             # 在 train 里要考虑 reward 的增加和减少，update value func + policy func + target func
+            learner.train(episode_sample, runner.t_env)
+            
 
             # 这里需要用 new/prime policy 采样轨迹，以及 policy 计算 other obs
             episode_batch_new = runner.run(test_mode=False, prime=True)
@@ -243,7 +239,6 @@ def run_sequential(args, logger):
             for _ in range(n_test_runs):
                 runner.run(test_mode=True, prime=False)
 
-        
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
             model_save_time = runner.t_env

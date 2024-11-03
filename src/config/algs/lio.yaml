@@ -24,6 +24,14 @@ runner: "episode_lio"
 agent_output_type: "q" # pi_logits,
 
 
+# special params
+lio_asymmetric: false # 如果agent num=2，那么就是true
+idx_recipient: 1  # 设定接收者id，在2 agents情况使用
+
+
+
+
+# rest
 name: "lio"
 learner: "lio_learner"
 mixer:  # Mixer becomes None
