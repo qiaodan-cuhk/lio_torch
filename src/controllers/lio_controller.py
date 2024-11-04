@@ -100,6 +100,8 @@ class LIOMAC(nn.Module):
         
         return rewards_full
 
+
+    """考虑这三个params用不用，目前在agent里被注释掉了"""
     def parameters_actor(self):
         return [agent.parameters_actor() for agent in self.agents]
  
@@ -109,6 +111,8 @@ class LIOMAC(nn.Module):
     def parameters_reward(self):
         return [agent.parameters_reward() for agent in self.agents]
     
+
+    """ policy sampling """
     def forward_actor(self, ep_batch, t, test_mode=False, learning_mode=False):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         policies = th.concat([self.agents[i].forward_actor(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
@@ -121,45 +125,11 @@ class LIOMAC(nn.Module):
         policies = th.concat([self.agents[i].forward_actor_prime(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
         return policies.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
 
+    """ critic value """
     def forward_value(self, ep_batch, t, test_mode=False, learning_mode=False):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         values = th.concat([self.agents[i].forward_value(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
         return values.view(ep_batch.batch_size, self.num_agents) # [bs,n]
- 
-    
-    # def forward_incentive(self, ep_batch, t, actions, test_mode=False, learning_mode=False):
-    #     self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
-
-    #     # 重新shape action lists,检查数据维度!
-    #     actions_for_agents = actions.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)
-    #     actions_for_agents = actions_for_agents.masked_select(self.mask_).view(ep_batch.batch_size, self.num_agents, self.num_agents-1).transpose(0, 1)
-    #     # [n,bs,n-1]
-
-    #     list_rewards = []
-    #     total_reward_given_to_each_agent = np.zeros(self.num_agents)
-
-    #     for i in range(self.num_agents):
-    #         agent = self.agents[i]
-    #         if agent.can_give:
-    #             reward = agent.forward_incentive(self.agent_inputs[i], actions_for_agents[i])
-    #         else:
-    #             reward = np.zeros(self.args_alg.n_agents)
-    #         reward[agent.agent_id] = 0
-    #         total_reward_given_to_each_agent += reward
-    #         # reward = np.delete(reward, agent.agent_id)
-    #         list_rewards.append(reward)
-
-    #     # rewards = th.concat([self.agents[i].forward_incentive(self.agent_inputs[i], actions_for_agents[i]).unsqueeze(1) for i in range], dim=1)
-    #     # [bs,n,n-1]
-    #     rewards = self.expand_rewards_batch(rewards) # [bs,n,n]
-
-    #     return rewards, total_reward_given_to_each_agent
-    
-
-
-    
-
-
     
     def _build_agents(self, input_shape):
         self.agents = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg) for i in range(self.num_agents)]
