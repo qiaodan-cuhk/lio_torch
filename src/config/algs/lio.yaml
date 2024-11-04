@@ -5,6 +5,7 @@
 mask_before_softmax: False
 action_selector: "multinomial"
 
+onehot_actions: false
 
 epsilon_start: 0.5
 epsilon_finish: 0.05
@@ -18,11 +19,19 @@ test_nepisode: 4
 test_interval: 200 # steps
 
 
-runner: "episode"
+runner: "episode_lio"
 # use the actor critic to train
 agent_output_type: "q" # pi_logits,
 
 
+# special params
+lio_asymmetric: false # 如果agent num=2，那么就是true
+idx_recipient: 1  # 设定接收者id，在2 agents情况使用
+
+
+
+
+# rest
 name: "lio"
 learner: "lio_learner"
 mixer:  # Mixer becomes None
@@ -83,9 +92,12 @@ use_actor_critic: true
 # Network Params
 kernel: [3, 3]
 n_filters: 6
-n_h1: 64
-n_h2: 64
-n_h: 128
+actor_h1: 64
+actor_h2: 64
+inc_h1: 64
+inc_h2: 64
+critic_h1: 64
+critic_h2: 64
 stride: [1, 1]
 
 
@@ -106,4 +118,3 @@ stride: [1, 1]
 #   save_threshold: 40
 #   seed: 12340
 #   summarize: false
-
