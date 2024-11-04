@@ -128,7 +128,10 @@ class LIOAgent(nn.Module):
 
 
     def forward_actor(self, inputs):
-        if self.args.rgb_input:
+        if self.config.env.rgb_input:
+            
+        '''这里rgb_input应该是放在env（lio_cu）里面的吧？我暂时没有加进去'''
+        
             x = self.conv_to_fc_actor(inputs)
         else:
             x = self.fc1_actor(inputs)
@@ -139,7 +142,7 @@ class LIOAgent(nn.Module):
     
     # 用于 prime policy 采样
     def forward_actor_prime(self, inputs):
-        if self.args.rgb_input:
+        if self.config.env.rgb_input:
             x = self.conv_to_fc_actor_prime(inputs)
         else:
             x = self.fc1_actor_prime(inputs)
@@ -150,7 +153,7 @@ class LIOAgent(nn.Module):
     
 
     def forward_incentive(self, inputs, actions):
-        if self.args.rgb_input:
+        if self.config.env.rgb_input:
             x = self.conv_to_fc_reward(inputs)
         else:
             x = self.fc_reward(inputs)
@@ -164,7 +167,7 @@ class LIOAgent(nn.Module):
         return inc_reward
     
     def forward_value(self, inputs):
-        if self.args.rgb_input:
+        if self.config.env.rgb_input:
             x = self.conv_to_fc_value(inputs)
         else:
             x = self.fc1_value(inputs)
