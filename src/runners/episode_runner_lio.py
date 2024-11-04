@@ -4,7 +4,7 @@ from components.episode_buffer import EpisodeBatch
 import numpy as np
 
 
-class EpisodeRunner:
+class EpisodeRunner_LIO:
 
     def __init__(self, args, logger):
         self.args = args
@@ -45,7 +45,8 @@ class EpisodeRunner:
         self.env.reset()
         self.t = 0
 
-    def run(self, test_mode=False):
+    # 添加 prime 参数控制用哪个策略网络采样动作
+    def run(self, test_mode=False, prime=False):
         self.reset()
 
         terminated = False
@@ -56,6 +57,7 @@ class EpisodeRunner:
 
         while not terminated:
 
+            # transition 之前的信息
             pre_transition_data = {
                 "state": [self.env.get_state()],
                 "avail_actions": [self.env.get_avail_actions()],
@@ -68,8 +70,11 @@ class EpisodeRunner:
 
             # Pass the entire batch of experiences up till now to the agents
             # Receive the actions for each agent at this timestep in a batch of size 1
-            if 'homophily' in self.args.name:
-                actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+            if 'lio' in self.args.name:
+                if prime:
+                    actions = self.mac.select_actions_env_prime(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+                else:
+                    actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
             else:
                 actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
 
@@ -84,15 +89,21 @@ class EpisodeRunner:
                 "clean_num": [(env_info["clean_num"],)],
                 "apple_den": [(env_info["apple_den"],)],
             }
-            if 'homophily' in self.args.name:
-                self.batch.update(post_transition_data, ts=self.t)
-                actions_inc = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode, agent_pos_replay = self.env.get_agent_pos())
-                post_transition_data = {
-                    "actions_inc": actions_inc,
+            self.batch.update(post_transition_data, ts=self.t)
+
+
+            # 给激励，检查 batch update 以后数据格式
+            if 'lio' in self.args.name:
+                recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+                                                        t_env=self.t_env, test_mode=test_mode,
+                                                        agent_pos_replay = self.env.get_agent_pos())
+                # recieved代表每个人接收到的总奖励，give代表每个agent具体给了谁多少奖励
+
+                incentivize_data = {
+                    "recieved_rewards": recieved_rewards,
+                    "give_other_rewards_list": give_rewards_list,
                 }
-                self.batch.update(post_transition_data, ts=self.t)
-            else:
-                self.batch.update(post_transition_data, ts=self.t)
+                self.batch.update(incentivize_data, ts=self.t)
 
             self.t += 1
 
@@ -107,19 +118,22 @@ class EpisodeRunner:
 
         # Select actions in the last stored state
 
-        """ 考虑添加 LIO 的 new episode 采样过程，使用 new policy 以及old inc action """ ，
-
-        if 'homophily' in self.args.name:
-            actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-            actions_inc = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode,agent_pos_replay = self.env.get_agent_pos())
-
-            self.batch.update({
-                "actions_inc": actions_inc,
-            }, ts=self.t)
+        if 'lio' in self.args.name:
+            if prime:
+                actions = self.mac.select_actions_env_prime(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+            else:
+                actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+            # actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+            recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+                                                        t_env=self.t_env, test_mode=test_mode,
+                                                        agent_pos_replay = self.env.get_agent_pos())
+            self.batch.update({ "recieved_rewards": recieved_rewards, "give_other_rewards_list": give_rewards_list,}, ts=self.t)
         else:
             actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
 
         self.batch.update({ "actions": actions,}, ts=self.t)
+        
+
 
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns

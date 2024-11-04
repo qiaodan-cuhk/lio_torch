@@ -10,6 +10,14 @@ class LIOAgent(nn.Module):
         self.config = config
         self.n_agents = config.env.num_agents
         self.n_actions = config.env.num_actions
+
+#     def __init__(self, input_shape, agent_id, args_env, args_alg):
+#         super(LIOAgent, self).__init__()
+#         self.args_env = args_env
+#         self.args_alg = args_alg
+#         self.n_agents = args_env.num_agents
+#         self.n_actions = args_env.num_actions
+
         self.agent_id = agent_id
         self.input_shape = input_shape
 
@@ -35,11 +43,13 @@ class LIOAgent(nn.Module):
                         config.env.obs_width - config.lio.kernel[1] + 1), config.lio.critic_h1),
                 nn.ReLU()
             )
+        #   nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
 
         self.fc1_value = nn.Sequential(
                 nn.Linear(input_shape, config.lio.critic_h1), 
                 nn.ReLU()
             )   
+#                         nn.Linear(input_shape, args_alg.n_h1), 
 
         self.fc2_value = nn.Sequential(
                 nn.Linear(config.lio.critic_h1, config.lio.critic_h2),
@@ -58,11 +68,26 @@ class LIOAgent(nn.Module):
                         config.env.obs_width - config.lio.kernel[1] + 1), config.lio.actor_h1),
                 nn.ReLU()
             )
+        
+#                         nn.Linear(args_alg.n_h1, args_alg.n_h2),
+#                 nn.ReLU()
+#             )
+        
+#         self.fc3_value = nn.Linear(args_alg.n_h2, 1)
+
+#         # Actor Network
+#         # 不知道卷积具体多大, 参数从 alg/lio.yaml 中获取
+
+#         self.conv_to_fc_actor = nn.Sequential(
+#                 nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
+        
+        
 
         self.fc1_actor = nn.Sequential(
                 nn.Linear(input_shape, config.lio.actor_h1), 
                 nn.ReLU()
             )   
+#       nn.Linear(input_shape, args_alg.n_h1), 
 
         self.fc2_actor = nn.Sequential(
                 nn.Linear(config.lio.actor_h1, config.lio.actor_h2),
@@ -75,17 +100,30 @@ class LIOAgent(nn.Module):
         # Prime Actor Network
         self.conv_to_fc_actor_prime = nn.Sequential(
                 nn.Conv2d(3, config.lio.n_filters, config.lio.kernel, config.lio.stride),
+
                 nn.ReLU(),
                 nn.Flatten(),
                 nn.Linear(config.lio.n_filters * (config.env.obs_height - config.lio.kernel[0] + 1) * (
                         config.env.obs_width - config.lio.kernel[1] + 1), config.lio.actor_h1),
                 nn.ReLU()
             )
+        
+#                         nn.Linear(args_alg.n_h1, args_alg.n_h2),
+#                 nn.ReLU()
+#             )
+        
+#         self.fc3_actor = nn.Linear(args_alg.n_h2, self.n_actions)
+
+
+#         # Prime Actor Network
+#         self.conv_to_fc_actor_prime = nn.Sequential(
+#                 nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
 
         self.fc1_actor_prime = nn.Sequential(
                 nn.Linear(input_shape, config.lio.actor_h1), 
                 nn.ReLU()
             )   
+#   nn.Linear(input_shape, args_alg.n_h1), 
 
         self.fc2_actor_prime = nn.Sequential(
                 nn.Linear(config.lio.actor_h1, config.lio.actor_h2),
@@ -109,22 +147,40 @@ class LIOAgent(nn.Module):
                         config.env.obs_width - config.lio.kernel[1] + 1), config.lio.inc_h1),
                 nn.ReLU()
             )
+        
+#                         nn.Linear(args_alg.n_h1, args_alg.n_h2),
+#                 nn.ReLU()
+#             )
+        
+#         self.fc3_actor_prime = nn.Linear(args_alg.n_h2, self.n_actions)
+
+#         # Incentivize Model
+#         """比如这里我简单改成了inc_h1，并且修改了网络逻辑保证fc1输入维度一致
+#             问题是：为什么reward最后linear一层的输出，还要过一个sigmoid？"""
+#         self.conv_to_fc_reward = nn.Sequential(
+#                 nn.Conv2d(3, args_alg.n_filters, args_alg.kernel, args_alg.stride),
+#                 nn.ReLU(),
+#                 nn.Flatten(),
+#                 nn.Linear(args_alg.n_filters * (args_env.obs_height - args_alg.kernel[0] + 1) * (
+#                         args_env.obs_width - args_alg.kernel[1] + 1), args_alg.inc_h1),
 
         self.fc_reward = nn.Sequential(
             nn.Linear(input_shape, config.lio.inc_h1),
             nn.ReLU()
             )
+  
+#   nn.Linear(input_shape, args_env.inc_h1),
 
         self.fc1_reward = nn.Sequential(
             nn.Linear(config.lio.inc_h1 + self.n_agents - 1, config.lio.inc_h2),
             nn.ReLU()
             )
+#   nn.Linear(args_env.inc_h1 + self.n_agents - 1, args_env.inc_h2),
 
-        """以及这里需要agent num减1吗？检查lio中reward 网络格式"""
-        
-        """我搞错了，不需要，mac里我也更改了一下，原先有写把(n-1)变成(n)的shape的函数"""
-        
         self.fc2_reward = nn.Linear(config.lio.inc_h2, self.n_agents)
+
+#         self.fc2_reward = nn.Linear(args_alg.inc_h2, self.n_agents-1)
+
 
 
     def forward_actor(self, inputs):
@@ -143,6 +199,7 @@ class LIOAgent(nn.Module):
     # 用于 prime policy 采样
     def forward_actor_prime(self, inputs):
         if self.config.env.rgb_input:
+#         if self.args.rgb_input:
             x = self.conv_to_fc_actor_prime(inputs)
         else:
             x = self.fc1_actor_prime(inputs)
@@ -153,7 +210,7 @@ class LIOAgent(nn.Module):
     
 
     def forward_incentive(self, inputs, actions):
-        if self.config.env.rgb_input:
+        if self.args.rgb_input:
             x = self.conv_to_fc_reward(inputs)
         else:
             x = self.fc_reward(inputs)
@@ -162,8 +219,7 @@ class LIOAgent(nn.Module):
         x = self.fc1_reward(x)
         x = self.fc2_reward(x)
         inc_reward = th.sigmoid(x)
-        """这里为什么还要过一个sigmoid？"""
-
+ 
         return inc_reward
     
     def forward_value(self, inputs):
@@ -200,7 +256,5 @@ class LIOAgent(nn.Module):
             self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
         elif self.config.lio.reg_coeff == 'linear':
             self.reg_coeff = min(1.0, self.reg_coeff + self.reg_coeff_step)
-
-    
 
 

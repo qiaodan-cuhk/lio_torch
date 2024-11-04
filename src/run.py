@@ -71,7 +71,8 @@ def run(_run, _config, _log):
 def evaluate_sequential(args, runner):
 
     for _ in range(args.test_nepisode):
-        runner.run(test_mode=True)
+        runner.run(test_mode=True, prime=False)
+    # eval 时候显然不需要用prime policy
 
     if args.save_replay:
         runner.save_replay()
@@ -79,6 +80,7 @@ def evaluate_sequential(args, runner):
     runner.close_env()
 
 def run_sequential(args, logger):
+
 
     # Init runner so we can get env info
     runner = r_REGISTRY[args.runner](args=args, logger=logger)
@@ -107,23 +109,28 @@ def run_sequential(args, logger):
         "agent_orientation": {"vshape": (args.n_agents, 2)},
     }
 
-    # args.name = homophily/lio , 这个param在algs.yaml里
-    if 'homophily' in args.name:
+
+    if 'lio' in args.name:
         scheme.update({
             "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
-        })
-        
+        }) 
 
     groups = {
         "agents": args.n_agents
     }
-    preprocess = {
-        "actions": ("actions_onehot", [OneHot(out_dim=args.n_actions if not args.action_double else args.n_actions * 2)])
-    }
+
+    """如果需要onehot再preprocess"""
+    if args.onehot_actions:
+        preprocess = {
+            "actions": ("actions_onehot", [OneHot(out_dim=args.n_actions if not args.action_double else args.n_actions * 2)])
+        }
+    else:
+        preprocess = None
+
 
     buffer = ReplayBuffer(scheme, groups, args.buffer_size, env_info["episode_limit"] + 1,
-                          preprocess=preprocess,
-                          device="cpu" if args.buffer_cpu_only else args.device)
+                        preprocess=preprocess,
+                        device="cpu" if args.buffer_cpu_only else args.device)
 
     # Setup multiagent controller here
     mac = mac_REGISTRY[args.mac](buffer.scheme, groups, args)
@@ -184,37 +191,44 @@ def run_sequential(args, logger):
     while runner.t_env <= args.t_max:
 
         # Run for a whole episode at a time
-        episode_batch = runner.run(test_mode=False)
+        episode_batch = runner.run(test_mode=False, prime=False)
         buffer.insert_episode_batch(episode_batch)
 
+        # buffer数量不够的时候，策略无法更新，自然无法执行reward inc的更新
         if buffer.can_sample(args.batch_size):
-            episode_sample = buffer.sample(args.batch_size)
 
+            episode_sample = buffer.sample(args.batch_size)
             # Truncate batch to only filled timesteps
             max_ep_t = episode_sample.max_t_filled()
+            episode_sample = episode_sample[:, :max_ep_t]
+            if episode_sample.device != args.device:
+                episode_sample.to(args.device)
+            
+            # 在 train 里要考虑 reward 的增加和减少，update value func + policy func + target func
+            learner.train(episode_sample, runner.t_env)
+            
 
-            if args.use_latest_sample:
-                latest_sample = buffer.sample_latest(args.latest_batch_size)
+            # 这里需要用 new/prime policy 采样轨迹，以及 policy 计算 other obs
+            episode_batch_new = runner.run(test_mode=False, prime=True)
+            buffer.insert_episode_batch(episode_batch_new)
+            new_episode_sample = buffer.sample_latest(args.batch_size)
+            # Truncate batch to only filled timesteps
+            new_max_ep_t = new_episode_sample.max_t_filled()
+            new_episode_sample = new_episode_sample[:, :new_max_ep_t]
+            if new_episode_sample.device != args.device:
+                new_episode_sample.to(args.device)
 
-                episode_sample = episode_sample[:, :max_ep_t]
-                latest_sample = latest_sample[:, :max_ep_t]
+            # 更新 reward inc policy，并且把 prime policy 赋值给 policy
+            # epsilon & reg_coeff 考虑放到LIO agent里，或者runner里，每个time step直接进行decaying，加一个参数控制
+            learner.train_reward(episode_sample, new_episode_sample, runner.t_env)
 
-                if episode_sample.device != args.device:
-                    episode_sample.to(args.device)
-                    latest_sample.to(args.device)
-
-                learner.train(episode_sample,latest_sample, runner.t_env, episode)
-            else:
-                episode_sample = episode_sample[:, :max_ep_t]
-
-                if episode_sample.device != args.device:
-                    episode_sample.to(args.device)
-
-                learner.train(episode_sample, runner.t_env, episode)
-
+        """新增部分结束"""
         # Execute test runs once in a while
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
+            """ 这里要加一个evaluate function """
+            eval_reward = evaluate_sequential(args, runner)
+            logger.console_logger.info(eval_reward, "eval rewards")
 
             logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
             logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
@@ -223,7 +237,8 @@ def run_sequential(args, logger):
 
             last_test_T = runner.t_env
             for _ in range(n_test_runs):
-                runner.run(test_mode=True)
+                runner.run(test_mode=True, prime=False)
+
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
             model_save_time = runner.t_env
@@ -261,3 +276,4 @@ def args_sanity_check(config, _log):
         config["test_nepisode"] = (config["test_nepisode"]//config["batch_size_run"]) * config["batch_size_run"]
 
     return config
+
