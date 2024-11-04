@@ -15,6 +15,7 @@ class LIOMAC(nn.Module):
         self.args_env = args_env
         self.args_alg = args_alg
         input_shape = self._get_input_shape(scheme)
+
         # 创建 self.agents = list[]
         self._build_agents(input_shape)
 
@@ -57,13 +58,14 @@ class LIOMAC(nn.Module):
     """这段要改，bs是干什么的"""
     # 所有agent的incentive reward选择，返回的是list_rewards=[n_agents,n-1]代表每个agent的激励选择，
     # 以及 total_reward，表示每个agent叠加到一起收到的总激励奖励。
+    # agent pos似乎没用
     def select_actions_inc(self, list_actions, ep_batch, t_ep,
                            t_env,  bs=slice(None), test_mode=False,
-                           agent_pos_replay = self.env.get_agent_pos()):   
+                           agent_pos_replay = None):   
 
         avail_actions = ep_batch["avail_actions"][:, t_ep]
 
-        self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
+        self.agent_inputs = self._build_inputs(ep_batch, t_ep)  # [n,bs,...]
 
         # 重新shape action lists,检查数据维度!
         actions_for_agents = list_actions.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)

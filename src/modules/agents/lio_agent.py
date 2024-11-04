@@ -33,17 +33,14 @@ class LIOAgent(nn.Module):
                         self.args_env.obs_width - self.args_alg.kernel[1] + 1), self.args_alg.critic_h1),
                 nn.ReLU()
             )
-
         self.fc1_value = nn.Sequential(
                 nn.Linear(input_shape, self.args_alg.critic_h1), 
                 nn.ReLU()
             )  
-
         self.fc2_value = nn.Sequential(
                 nn.Linear(self.args_alg.critic_h1, self.args_alg.critic_h2),
                 nn.ReLU()
             )
-        
         self.fc3_value = nn.Linear(self.args_alg.critic_h2, 1)
 
         # Actor Network
@@ -55,20 +52,15 @@ class LIOAgent(nn.Module):
                         self.args_env.obs_width - self.args_alg.kernel[1] + 1), self.args_alg.actor_h1),
                 nn.ReLU()
             )
-
         self.fc1_actor = nn.Sequential(
                 nn.Linear(input_shape, self.args_alg.actor_h1), 
                 nn.ReLU()
-            )   
-#       nn.Linear(input_shape, args_alg.n_h1), 
-
+            )  
         self.fc2_actor = nn.Sequential(
                 nn.Linear(self.args_alg.actor_h1, self.args_alg.actor_h2),
                 nn.ReLU()
             )
-        
         self.fc3_actor = nn.Linear(self.args_alg.actor_h2, self.n_actions)
-
 
         # Prime Actor Network
         self.conv_to_fc_actor_prime = nn.Sequential(
@@ -79,24 +71,19 @@ class LIOAgent(nn.Module):
                         self.args_env.obs_width - self.args_alg.kernel[1] + 1), self.args_alg.actor_h1),
                 nn.ReLU()
             )
-        
-
         self.fc1_actor_prime = nn.Sequential(
                 nn.Linear(input_shape, self.args_alg.actor_h1), 
                 nn.ReLU()
             )   
-
         self.fc2_actor_prime = nn.Sequential(
                 nn.Linear(self.args_alg.actor_h1, self.args_alg.actor_h2),
                 nn.ReLU()
             )
-        
         self.fc3_actor_prime = nn.Linear(self.args_alg.actor_h2, self.n_actions)
 
-        # Incentivize Model
+        # Incentivize Network
         """lio代码里想要把激励限制在[0, r_multiplier]范围内，所以激励输出时先过一个sigmoid，
             在之后调用的时候再乘一个r_multiplier的超参数，比如ER和cleanup里的r_multiplier是2.0，ipd里面是3.0"""
-        
         self.conv_to_fc_reward = nn.Sequential(
                 nn.Conv2d(3, self.args_alg.n_filters, self.args_alg.kernel, self.args_alg.stride),
                 nn.ReLU(),
@@ -105,19 +92,14 @@ class LIOAgent(nn.Module):
                         self.args_env.obs_width - self.args_alg.kernel[1] + 1), self.args_alg.inc_h1),
                 nn.ReLU()
             )
-
         self.fc_reward = nn.Sequential(
             nn.Linear(input_shape, self.args_alg.inc_h1),
             nn.ReLU()
             )
-  
-#   nn.Linear(input_shape, args_env.inc_h1),
-
         self.fc1_reward = nn.Sequential(
             nn.Linear(self.args_alg.inc_h1 + self.n_agents - 1, self.args_alg.inc_h2),
             nn.ReLU()
             )
-
         self.fc2_reward = nn.Linear(self.args_alg.inc_h2, self.n_agents)
 
 
@@ -168,6 +150,7 @@ class LIOAgent(nn.Module):
     
     def set_can_give(self, can_give):
         self.can_give = can_give
+
 
 
     """ 考虑 self.step update """
