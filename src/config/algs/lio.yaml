@@ -89,16 +89,19 @@ tau: 0.01
 use_actor_critic: true
 
 
-# Network Params
+# a2c params
 kernel: [3, 3]
 n_filters: 6
+stride: [1, 1]
+
 actor_h1: 64
 actor_h2: 64
+
 inc_h1: 64
 inc_h2: 64
+
 critic_h1: 64
 critic_h2: 64
-stride: [1, 1]
 
 
 # # Projects/lio/lio/alg/config_ssd_lio.yaml
