@@ -31,10 +31,10 @@ class LIOAgent(nn.Module):
             self.inc = Incentive(input_shape, args_env, args_alg)
 
 
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=0.001)
-        self.actor_prime_optimizer = optim.Adam(self.actor_prime.parameters(), lr=0.001)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=0.001)
-        self.inc_optimizer = optim.Adam(self.inc.parameters(), lr=0.001)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args_alg.lr_actor)
+        self.actor_prime_optimizer = optim.Adam(self.actor_prime.parameters(), lr=args_alg.lr_actor)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=args_alg.lr_v)
+        self.inc_optimizer = optim.Adam(self.inc.parameters(), lr=args_alg.lr_reward)
 
 
         # 考虑是否添加 other id list
