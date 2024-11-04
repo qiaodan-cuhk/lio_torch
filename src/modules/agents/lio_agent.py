@@ -15,7 +15,7 @@ class LIOAgent(nn.Module):
         self.can_give = True
 
         if args_env.rgb_input:
-            from networks import ActorConv, CriticConv, IncentiveConv
+            from lio_torch.src.modules.networks import ActorConv, CriticConv, IncentiveConv
 
             self.actor = ActorConv(input_shape, args_env, args_alg)
             self.actor_prime = ActorConv(input_shape, args_env, args_alg)
@@ -23,7 +23,7 @@ class LIOAgent(nn.Module):
             self.inc = IncentiveConv(input_shape, args_env, args_alg)
 
         else:
-            from networks import Actor, Critic, Incentive
+            from lio_torch.src.modules.networks import Actor, Critic, Incentive
 
             self.actor = Actor(input_shape, args_env, args_alg)
             self.actor_prime = Actor(input_shape, args_env, args_alg)
