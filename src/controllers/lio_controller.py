@@ -53,6 +53,7 @@ class LIOMAC(nn.Module):
         return chosen_actions
         # [bs,n]
 
+
     """这段要改，bs是干什么的"""
     # 所有agent的incentive reward选择，返回的是list_rewards=[n_agents,n-1]代表每个agent的激励选择，
     # 以及 total_reward，表示每个agent叠加到一起收到的总激励奖励。
@@ -90,7 +91,7 @@ class LIOMAC(nn.Module):
 
         return total_reward_given_to_each_agent, list_rewards
     
-    # 这段不一定要用
+
     def expand_rewards_batch(self, rewards):
         bs, _, _ = rewards.size()
         rewards_full = th.zeros(bs, self.num_agents, self.num_agents, device=self.args.device)
@@ -116,15 +117,15 @@ class LIOMAC(nn.Module):
     """ prime policy sampling """
     def forward_actor_prime(self, ep_batch, t, test_mode=False, learning_mode=False):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
+
         policies = th.concat([self.agents[i].forward_actor_prime(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
         return policies.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
-    
 
     def forward_value(self, ep_batch, t, test_mode=False, learning_mode=False):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         values = th.concat([self.agents[i].forward_value(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)
         return values.view(ep_batch.batch_size, self.num_agents) # [bs,n]
-    
+ 
     
     # def forward_incentive(self, ep_batch, t, actions, test_mode=False, learning_mode=False):
     #     self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
@@ -153,6 +154,9 @@ class LIOMAC(nn.Module):
     #     rewards = self.expand_rewards_batch(rewards) # [bs,n,n]
 
     #     return rewards, total_reward_given_to_each_agent
+    
+
+
     
 
 

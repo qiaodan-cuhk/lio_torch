@@ -92,9 +92,12 @@ use_actor_critic: true
 # Network Params
 kernel: [3, 3]
 n_filters: 6
-n_h1: 64
-n_h2: 64
-n_h: 128
+actor_h1: 64
+actor_h2: 64
+inc_h1: 64
+inc_h2: 64
+critic_h1: 64
+critic_h2: 64
 stride: [1, 1]
 
 
@@ -115,4 +118,3 @@ stride: [1, 1]
 #   save_threshold: 40
 #   seed: 12340
 #   summarize: false
-
