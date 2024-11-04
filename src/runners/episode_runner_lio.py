@@ -92,7 +92,7 @@ class EpisodeRunner_LIO:
             self.batch.update(post_transition_data, ts=self.t)
 
 
-            # 给激励，mac里并没有写如何给一个batch奖励的函数，所以我们为了灵活性，在这里实现
+            # 给激励，检查 batch update 以后数据格式
             if 'lio' in self.args.name:
                 recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
                                                         t_env=self.t_env, test_mode=test_mode,
@@ -134,7 +134,7 @@ class EpisodeRunner_LIO:
         self.batch.update({ "actions": actions,}, ts=self.t)
         
 
-        
+
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = "test_" if test_mode else ""
