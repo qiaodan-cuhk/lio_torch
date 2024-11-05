@@ -69,11 +69,6 @@ class LIOAgent(nn.Module):
         在之后调用的时候再乘一个r_multiplier的超参数，比如ER和cleanup里的r_multiplier是2.0，ipd里面是3.0"""
 
 
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args_alg.lr_actor)
-        self.actor_prime_optimizer = optim.Adam(self.actor_prime.parameters(), lr=args_alg.lr_actor)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=args_alg.lr_v)
-        self.inc_optimizer = optim.Adam(self.inc.parameters(), lr=args_alg.lr_reward)
-
 
 
     def forward_actor(self, inputs):
