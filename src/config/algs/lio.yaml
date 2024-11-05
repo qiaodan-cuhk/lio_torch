@@ -74,8 +74,11 @@ asymmetric: false
 idx_recipient: 0  # only used if asymmetric=True
 budget_constraint: false
 include_cost_in_chain_rule: false
+separate_cost_optimizer: false
 
+r_multiplier: 1  #控制inc范围，整数
 
+# training params
 lr_actor: 1e-4
 lr_cost: 1e-5
 lr_opp: 1e-3
@@ -84,7 +87,6 @@ lr_v: 1e-3
 optimizer: 'adam'
 reg: 'l1'
 reg_coeff: 1e-4  # float, or 'linear', or 'adaptive'
-separate_cost_optimizer: false
 tau: 0.01
 use_actor_critic: true
 

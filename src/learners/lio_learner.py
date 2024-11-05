@@ -3,6 +3,7 @@ from components.episode_buffer import EpisodeBatch
 import torch as th
 from torch.optim import RMSprop, Adam
 
+
 from pyclustering.cluster.xmeans import xmeans
 from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
 
@@ -14,26 +15,12 @@ class LIOLearner:
         self.args = args
         self.mac = mac
         self.logger = logger
+        self.scheme = scheme
 
-    
-    def create_agents(self):
-        """创建和初始化代理"""
-        from lio_ac import LIO
-        for agent_id in range(self.env.n_agents):
-            agent = LIO(self.config.lio, self.env.dim_obs, self.env.l_action,
-                        self.config.nn, 'agent_%d' % agent_id,
-                        self.config.env.r_multiplier, self.env.n_agents,
-                        agent_id, self.env.l_action_for_r)
-            self.list_agents.append(agent)
-            self.optimizers.append(optim.Adam(agent.parameters(), lr=self.config.lio.learning_rate))
-            agent.receive_list_of_agents(self.list_agents)
-            agent.create_policy_gradient_op()
-            agent.create_update_op()
-            if self.config.lio.use_actor_critic:
-                agent.create_critic_train_op()
-            agent.create_reward_train_op()
+
 
     def train(self, buffers, t_env):
+        
         """ 训练过程，包括更新策略和奖励训练 """
         for idx, agent in enumerate(self.list_agents):
             self.optimizers[idx].zero_grad()  # 清空梯度
@@ -56,10 +43,12 @@ class LIOLearner:
         self.policy_grad.detach()
 
         
-    def train_reward(self, buffer, new_buffer, t_env):
-        """训练奖励函数"""
 
-        self.reg_coeff = update(t_env)
+
+    def train_reward(self, buffer, new_buffer, t_env):
+        """训练激励函数"""
+
+        self.reg_coeff = self.agent.update_reg_coeff(self, performance, prev_reward_env).
 
         if agent.can_give:
 
@@ -119,15 +108,13 @@ class LIOLearner:
         # 用更新后的prime去覆盖 policy
         self.update_policy_from_prime()
 
+
+
+
     def update_policy_from_prime(self):
         """用 prime policy 更新主策略"""
         for agent in self.list_agents:
             agent.policy = agent.policy_prime
-
-    def set_can_give(self, can_give):
-        """设置代理是否可以给予奖励"""
-        self.can_give = can_give
-
 
     
     """"""
@@ -152,4 +139,25 @@ class LIOLearner:
             th.load("{}/opt_env.th".format(path), map_location=lambda storage, loc: storage))
         self.optimiser_inc.load_state_dict(
             th.load("{}/opt_inc.th".format(path), map_location=lambda storage, loc: storage))
+
+
+
+
+    # 直接由 mac 里 build agents 完成了，并且torch不需要计算图
+    # def create_agents(self):
+    #     """创建和初始化代理"""
+    #     from lio_ac import LIO
+    #     for agent_id in range(self.env.n_agents):
+    #         agent = LIO(self.config.lio, self.env.dim_obs, self.env.l_action,
+    #                     self.config.nn, 'agent_%d' % agent_id,
+    #                     self.config.env.r_multiplier, self.env.n_agents,
+    #                     agent_id, self.env.l_action_for_r)
+    #         self.list_agents.append(agent)
+    #         self.optimizers.append(optim.Adam(agent.parameters(), lr=self.config.lio.learning_rate))
+    #         agent.receive_list_of_agents(self.list_agents)
+    #         agent.create_policy_gradient_op()
+    #         agent.create_update_op()
+    #         if self.config.lio.use_actor_critic:
+    #             agent.create_critic_train_op()
+    #         agent.create_reward_train_op()
 
