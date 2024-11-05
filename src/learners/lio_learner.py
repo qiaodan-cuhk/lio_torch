@@ -18,89 +18,156 @@ class LIOLearner:
         self.scheme = scheme
 
 
+        self.policy_new = PolicyNewCNN if self.image_obs else PolicyNewMLP
+        # 用于计算 reward 更新
 
-    def train(self, buffers, t_env):
-        
-        """ 训练过程，包括更新策略和奖励训练 """
-        for idx, agent in enumerate(self.list_agents):
-            self.optimizers[idx].zero_grad()  # 清空梯度
-            agent.update(sess, list_buffers[idx], epsilon)  # 更新策略
-            self.optimizers[idx].step()  # 更新参数
 
-        for agent in self.list_agents:
-            if agent.can_give:
-                agent.train_reward(sess, list_buffers, list_buffers_new, epsilon, self.reg_coeff)
 
-        for agent in self.list_agents:
-            agent.update_main(sess)
+    def train(self, ep_batch, t_env):
 
-        # train 里面不更新step，而是把梯度存进 self.policy_grads
-        self.policy_grads = loss.backwards()
-        # self.policy 不用step，prime policy去step
-        self.prime_policy.optimizer.step()
-
-        # 会用于更新 reward inc learning，detach 掉
-        self.policy_grad.detach()
+        # 把main actor参数复制给prime保证一致
+        self.policy_prime.load_state_dict(self.policy.state_dict()) 
 
         
+        bs = ep_batch.batch_size
+
+        """ Update value network """
+        state = ep_batch.obs  # 获取当前状态
+        next_state = ep_batch.obs_next  # 获取下一个状态
+        n_steps = ep_batch.n_steps  # 获取步数
+        rewards = ep_batch.   # 奖励
+
+        v_next = self.mac.forward_value(self, next_state, t_env, test_mode=False, learning_mode=False)
+        v = self.mac.forward_value(self, state, t_env, test_mode=False, learning_mode=False)
+        """这里要加一个target mac clone"""
+        v_target = self.clone_mac
+
+        # 计算优势
+        if self.include_cost_in_chain_rule:
+            total_reward = [buf.reward[idx] + buf.r_from_others[idx] - buf.r_given[idx] for idx in range(n_steps)]
+        else:
+            total_reward = [buf.reward[idx] + buf.r_from_others[idx] for idx in range(n_steps)]
+        
+        # 计算 TD 误差
+        td_error = th.tensor(total_reward, dtype=th.float32) + self.gamma * v_target - v
+
+        # 更新价值网络
+        agent.critic_optimizer.zero_grad()
+        td_error.backward()  # 注意这里是 backward 而不是 backwards
+        agent.critic_optimizer.step()
+
+
+        """更新 prime actor"""
+         # 处理动作
+        actions_1hot = util.process_actions(buf.action, self.l_action)
+
+        # 准备输入数据
+        obs = th.tensor(buf.obs, dtype=th.float32)
+        action_taken = th.tensor(actions_1hot, dtype=th.float32)
+        r_ext = th.tensor(buf.reward, dtype=th.float32)
+        r_from_others = th.tensor(buf.r_from_others, dtype=th.float32)
+
+        """这里要考虑inc rewards是否用于critic更新"""
+        r2_val = r_ext + r_from_others
+        if self.include_cost_in_chain_rule:
+            r_given = th.tensor(buf.r_given, dtype=th.float32)
+            r2_val -= r_given
+
+        # 计算 TD 错误
+        v_td_error = r2_val + self.gamma * v_next - v
+
+        # 计算策略损失，用的都是prime policy
+        log_probs_taken = th.log(th.sum(self.policy_prime(obs) * action_taken, dim=1) + 1e-15)
+        entropy = -th.sum(self.policy_prime(obs) * th.log(self.policy_prime(obs) + 1e-15))
+        policy_loss = -th.sum(log_probs_taken * v_td_error)
+        loss = policy_loss - self.reg_coeff * entropy
+
+        # 更新 prime 网络的参数，存储梯度
+        agent.prime_optimizer.zero_grad()
+        loss.backward()
+        agent.prime_optimizer.step()
+
+
+        agent.policy_grads = [p.grad.detach() for p in agent.policy_prime.parameters()]  # detach 以避免梯度累积
+
+        # 如果你想手动使用这些梯度进行更新
+        # agent.policy_optimizer.zero_grad()
+        # for p, grad in zip(agent.policy.parameters(), agent.policy_grads):
+        #     p.grad = grad  # 手动设置参数的梯度
+        # agent.policy_optimizer.step()  # 使用优化器更新参数
+
+        # 假设你已经计算了策略梯度并存储在 agent.policy_grads 中
+
+        # # 计算超梯度
+        # hypergradients = []
+        # for p, grad in zip(agent.policy.parameters(), agent.policy_grads):
+        #     # 计算超梯度（例如，损失函数对学习率的导数）
+        #     hypergrad = compute_hypergradient(p, grad)  # 你需要定义这个函数
+        #     hypergradients.append(hypergrad)
+
+        # # 更新超参数（例如，学习率）
+        # for i, param in enumerate(agent.hyperparameters):
+        #     param.data -= learning_rate * hypergradients[i]  # 使用超梯度更新超参数
 
 
     def train_reward(self, buffer, new_buffer, t_env):
         """训练激励函数"""
 
-        self.reg_coeff = self.agent.update_reg_coeff(self, performance, prev_reward_env).
-
-        if agent.can_give:
-
-
         for agent in self.list_agents:
-            if agent.agent_id == self.agent_id:
-                continue
-            buf_other = buffer[agent.agent_id]
-            n_steps = len(buf_other.obs)
 
-            # 使用PyTorch计算v_next和v
-            v_next = agent.v(buf_other.obs_next).detach().numpy()
-            v = agent.v(buf_other.obs).detach().numpy()
+            agent.reg_coeff = self.agent.update_reg_coeff(self, performance, prev_reward_env).
 
-            actions_other_1hot = util.process_actions(buf_other.action, agent.l_action)
-            feed = {
-                'obs': buf_other.obs,
-                'action_taken': actions_other_1hot,
-                'r_ext': buf_other.reward,
-                'epsilon': epsilon,
-                'v_next': v_next,
-                'v': v
-            }
+            list_reward_loss = []  #用于表示当前agent对于所有其他agent奖励的loss
+            agent.list_policy_new = [0 for x in range(self.n_agents)]
 
-            buf_other_new = list_buf_new[agent.agent_id]
-            actions_other_1hot_new = util.process_actions(buf_other_new.action, agent.l_action)
-            feed['action_others'] = util.get_action_others_1hot_batch(buf_other.action_all, agent.agent_id, agent.l_action_for_r)
+            if agent.can_give:
+                
+                for inc_to_agent in self.list_of_all_agents:
 
-            # 处理self agent的情况
-            if self.include_cost_in_chain_rule:
-                action_self_1hot = util.process_actions(buf_self.action, self.l_action)
-                feed['action_taken'] = action_self_1hot
-                feed['r_ext'] = buf_self.reward
-                v_next = self.v(buf_self.obs_next).detach().numpy()
-                v = self.v(buf_self.obs).detach().numpy()
-                feed['v_next'] = v_next
-                feed['v'] = v
+                    # 忽略对于自身的奖励
+                    if agent.agent_id == inc_to_agent.agent_id and not agent.include_cost_in_chain_rule:
+                        continue
 
-            # 计算奖励
-            feed['obs'] = buf_self.obs
-            feed['action_others'] = util.get_action_others_1hot_batch(buf_self.action_all, self.agent_id, self.l_action_for_r)
-            feed['ones'] = np.ones(n_steps)
 
-            # 计算总奖励
-            total_reward = buf_self_new.reward + self.gamma * v_next - v
-            feed['v_td_error'] = total_reward
+                    # 直接复制 prime policy 的参数
+                    """这里逻辑找一下"""
+                    other_policy_new = agent.policy_new(
+                        inc_to_agent.policy_prime.state_dict(),  # 复制 prime policy 的参数
+                        inc_to_agent.dim_obs,
+                        inc_to_agent.l_action,
+                        inc_to_agent.agent_name
+                    )
+                    agent.list_policy_new[inc_to_agent.agent_id] = other_policy_new
 
-            if not (self.include_cost_in_chain_rule or self.separate_cost_optimizer):
-                feed['reg_coeff'] = reg_coeff
+                    log_probs_taken = th.log(
+                        th.sum(other_policy_new.probs * other_policy_new.action_taken, dim=1) + 1e-15)  # 加上小常数以避免 log(0)
+                    loss_term = -th.sum(log_probs_taken * self.v_td_error)  # v_td_error 是用前面的critic update计算的
+                    list_reward_loss.append(loss_term)  # 第 agent 个对于所有 inc_to_agent 的loss list
 
-            # 使用PyTorch的优化器更新奖励
-            self.reward_op(feed)
+                    if agent.include_cost_in_chain_rule:
+                        agent.reward_loss = th.sum(th.stack(list_reward_loss)) 
+                    else:  # directly minimize given rewards
+
+                        reverse_1hot = 1 - th.nn.functional.one_hot(self.agent_id, num_classes=self.n_agents).float()
+
+                        if self.separate_cost_optimizer or self.reg == 'l1':
+                            # 创建一个全为1的张量，大小与批次相同
+                            self.ones = th.ones(batch_size)  # 假设 batch_size 是当前批次的大小
+                            self.gamma_prod = th.cumprod(self.ones * self.gamma, dim=0)  # 计算折扣因子的累积乘积
+                            given_each_step = th.sum(th.abs(self.reward_function * reverse_1hot), dim=1)  # 计算每一步的奖励
+                            total_given = th.sum(given_each_step * (self.gamma_prod / self.gamma))  # 计算总的给定奖励
+                        elif self.reg == 'l2':
+                            total_given = th.sum(th.square(self.reward_function * reverse_1hot))  # 计算平方和
+
+                        if self.separate_cost_optimizer:
+                            self.reward_loss = th.sum(th.stack(list_reward_loss))  # 直接求和
+                        else:
+                            agent.reward_loss = th.sum(th.stack(list_reward_loss)) + self.reg_coeff * total_given  # 结合正则化项
+
+            agent.inc_optimizer.zero_grad()
+            agent.reward_loss.backward()
+            agent.inc_optimizer.step()
+
 
         # 更新目标网络
         self.update_target_network()
