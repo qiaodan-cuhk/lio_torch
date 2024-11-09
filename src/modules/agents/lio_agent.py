@@ -4,8 +4,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 import math
 
-from ..networks import ActorConv, CriticConv, IncentiveConv, Actor, Critic, Incentive
+from ..networks import ActorConv, IncentiveConv, Actor, Incentive
 
+# agent 只用来定义 actor 的网络结构，输入 obs 输出 n_actions 的NN forward
 
 class LIOAgent(nn.Module):
     def __init__(self, input_shape, agent_id, args_env, args_alg):
@@ -39,7 +40,7 @@ class LIOAgent(nn.Module):
         self.gamma = self.args_alg.gamma_env
         
         self.lr_actor = self.args_alg.lr_actor
-        self.lr_reward = self.args_alg.lr_reward
+        self.lr_inc = self.args_alg.lr_inc
         self.lr_v = self.args_alg.lr_v
         self.lr_cost = self.args_alg.lr_cost # 不知道啥用
 
@@ -57,19 +58,49 @@ class LIOAgent(nn.Module):
         if args_env.rgb_input:
             self.actor = ActorConv(input_shape, args_env, args_alg)
             self.actor_prime = ActorConv(input_shape, args_env, args_alg)
-            self.critic = CriticConv(input_shape, args_env, args_alg)
             self.inc = IncentiveConv(input_shape, args_env, args_alg)
         else:
             self.actor = Actor(input_shape, args_env, args_alg)
             self.actor_prime = Actor(input_shape, args_env, args_alg)
-            self.critic = Critic(input_shape, args_env, args_alg)
             self.inc = Incentive(input_shape, args_env, args_alg)
 
         """lio代码里想要把激励限制在[0, r_multiplier]范围内，所以激励输出时先过一个sigmoid，
         在之后调用的时候再乘一个r_multiplier的超参数，比如ER和cleanup里的r_multiplier是2.0，ipd里面是3.0"""
 
+    """ self.mac.params_env/inc 调用网络参数 """
+    def parameters_env(self):
+        params = []
+        if self.args.rgb_input:
+            params += list(self.actor.parameters())
 
+        for n, p in self.named_parameters():
+            if 'env' in n:
+                params.append(p)
 
+        return params
+    
+
+    def parameters_env_prime(self):
+        params = []
+        if self.args.rgb_input:
+            params += list(self.actor_prime.parameters())
+
+        for n, p in self.named_parameters():
+            if 'env' in n:
+                params.append(p)
+
+        return params
+
+    def parameters_inc(self):
+        params = []
+        if self.args.rgb_input:
+            params += list(self.inc.parameters())
+
+        for n, p in self.named_parameters():
+            if 'inc' in n:
+                params.append(p)
+        return params
+    
 
     def forward_actor(self, inputs):
         action = self.actor.forward(inputs)
@@ -84,9 +115,6 @@ class LIOAgent(nn.Module):
         inc_reward = self.inc.forward(inputs, actions)
         return inc_reward
     
-    def forward_value(self, inputs):
-        value = self.critic.forward(inputs)
-        return value
     
     def set_can_give(self, can_give):
         self.can_give = can_give

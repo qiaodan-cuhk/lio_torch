@@ -3,46 +3,44 @@ from components.episode_buffer import EpisodeBatch
 import torch as th
 from torch.optim import RMSprop, Adam
 
-
 from pyclustering.cluster.xmeans import xmeans
 from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
 
-# from modules.critics import Critic, CriticConv
-from modules.networks import ActorConv, CriticConv, IncentiveConv, Actor, Critic, Incentive
-
-
+# from ..modules.critics import CriticConv,Critic
+from ..modules.critics import REGISTRY as critic_resigtry
 
 # logger 要增加一些测量incentivize的metric
 
 class LIOLearner:
     def __init__(self, mac, scheme, logger, args):
         self.args = args
-        self.mac = mac
         self.n_agents = args.n_agents
         self.n_actions = args.n_actions
         self.logger = logger
         self.scheme = scheme
 
-        if self.args.rgb_input:
-            self.actor = ActorConv(input_shape, args_env, args_alg)
-            self.actor_prime = ActorConv(input_shape, args_env, args_alg)
-            self.critic = CriticConv(input_shape, args_env, args_alg)
-            self.inc = IncentiveConv(input_shape, args_env, args_alg)
-        else:
-            self.actor = Actor(input_shape, args_env, args_alg)
-            self.actor_prime = Actor(input_shape, args_env, args_alg)
-            self.critic = Critic(input_shape, args_env, args_alg)
-            self.inc = Incentive(input_shape, args_env, args_alg)
+        self.mac = mac  # 包括 actor/prime actor/inc NN
+        self.actor_params = list(mac.actor.parameters())
+        self.actor_optimiser = Adam(params=self.actor_params, lr=args.lr_actor)
+        # prime actor 网络只用来推理和存储，不用opt更新
+        
+        self.inc_params = list(mac.inc.parameters())
+        self.inc_optimizer = Adam(self.inc_params, lr=args.lr_inc)
 
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args_alg.lr_actor)
-        self.actor_prime_optimizer = optim.Adam(self.actor_prime.parameters(), lr=args_alg.lr_actor)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=args_alg.lr_v)
-        self.inc_optimizer = optim.Adam(self.inc.parameters(), lr=args_alg.lr_reward)
+        # a little wasteful to deepcopy (e.g. duplicates action selector), but should work for any MAC
+        # self.target_mac = copy.deepcopy(mac)
 
+        self.critic = critic_resigtry[args.critic_type](scheme, args)  # args.critic_type = rgb/not
+        self.target_critic = copy.deepcopy(self.critic)
 
-        self.policy_new = PolicyNewCNN if self.image_obs else PolicyNewMLP
+        self.critic_params = list(self.critic.parameters())
+        self.critic_optimizer = Adam(self.critic_params, lr=args.lr_v)
+
+        self.log_stats_t = -self.args.learner_log_interval - 1
+
         # 用于计算 reward 更新
-
+        self.policy_new = PolicyNewCNN if self.image_obs else PolicyNewMLP
+        
 
 
     def train(self, ep_batch, t_env):
@@ -217,13 +215,6 @@ class LIOLearner:
 
 
 
-
-    def update_policy_from_prime(self):
-        """用 prime policy 更新主策略"""
-        for agent in self.list_agents:
-            agent.policy = agent.policy_prime
-
-    
     """"""
 
     def _train_critic(self, batch, rewards, terminated, actions, avail_actions, mask, bs, max_t):
@@ -275,48 +266,47 @@ class LIOLearner:
             running_log["target_mean"].append((targets_t * mask_t).sum().item() / mask_elems)
 
         return q_vals, running_log
-    
 
+
+
+    def update_policy_from_prime(self):
+        """用 prime policy 更新主策略"""
+        for agent in self.list_agents:
+            agent.policy = agent.policy_prime
+
+
+
+    """也考虑是不是 target critic """
     def _update_targets(self):
         self.target_mac.load_state(self.mac)
         self.logger.console_logger.info("Updated target network")
 
     def cuda(self):
         self.mac.cuda()
+        self.critic.cuda()
+        self.target_critic.cuda()
         self.target_mac.cuda()
 
     def save_models(self, path):
         self.mac.save_models(path)
-        th.save(self.optimiser_env.state_dict(), "{}/opt_env.th".format(path))
-        th.save(self.optimiser_inc.state_dict(), "{}/opt_inc.th".format(path))
+        th.save(self.critic.state_dict(), "{}/critic.th".format(path))
+
+        th.save(self.actor_optimizer.state_dict(), "{}/opt_actor.th".format(path))
+        th.save(self.critic_optimizer.state_dict(), "{}/opt_critic.th".format(path))
+        th.save(self.inc_optimizer.state_dict(), "{}/opt_inc.th".format(path))
 
     def load_models(self, path):
         self.mac.load_models(path)
+        self.critic.load_state_dict(
+            th.load("{}/critic.th".format(path), map_location=lambda storage, loc: storage))
         # Not quite right but I don't want to save target networks
         self.target_mac.load_models(path)
-        self.optimiser_env.load_state_dict(
-            th.load("{}/opt_env.th".format(path), map_location=lambda storage, loc: storage))
-        self.optimiser_inc.load_state_dict(
-            th.load("{}/opt_inc.th".format(path), map_location=lambda storage, loc: storage))
+        self.target_critic.load_state_dict(self.critic.state_dict())
 
-
-
-
-    # 直接由 mac 里 build agents 完成了，并且torch不需要计算图
-    # def create_agents(self):
-    #     """创建和初始化代理"""
-    #     from lio_ac import LIO
-    #     for agent_id in range(self.env.n_agents):
-    #         agent = LIO(self.config.lio, self.env.dim_obs, self.env.l_action,
-    #                     self.config.nn, 'agent_%d' % agent_id,
-    #                     self.config.env.r_multiplier, self.env.n_agents,
-    #                     agent_id, self.env.l_action_for_r)
-    #         self.list_agents.append(agent)
-    #         self.optimizers.append(optim.Adam(agent.parameters(), lr=self.config.lio.learning_rate))
-    #         agent.receive_list_of_agents(self.list_agents)
-    #         agent.create_policy_gradient_op()
-    #         agent.create_update_op()
-    #         if self.config.lio.use_actor_critic:
-    #             agent.create_critic_train_op()
-    #         agent.create_reward_train_op()
+        self.actor_optimizer.load_state_dict(
+            th.load("{}/opt_actor.th".format(path), map_location=lambda storage, loc: storage))
+        self.critic_optimizer.load_state_dict(
+            th.load("{}/opt_critic.th".format(path), map_location=lambda storage, loc: storage))
+        self.critic_optimizer.load_state_dict(
+            th.load("{}/opt_critic.th".format(path), map_location=lambda storage, loc: storage))
 

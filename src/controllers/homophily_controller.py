@@ -136,6 +136,7 @@ class HomophilyMAC(nn.Module):
             inputs.append(data.reshape((bs, self.n_agents, self.args.obs_dim_net)))  # [bs,n,...]
         else:
             inputs.append(batch["obs"][:, t])  # b1av, [bs,t,n,..] ==> [bs,n,...]
+            
         if self.args.obs_last_action:
             if t == 0:
                 inputs.append(th.zeros_like(batch["actions_onehot"][:, t]))
