@@ -157,6 +157,8 @@ class LIOMAC(nn.Module):
 
         return agent_outs.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
     
+    # 这个用于learner里，forward inc 奖励的 logits
+    # def forward_inc():
 
     """ 功能性函数 """
 
