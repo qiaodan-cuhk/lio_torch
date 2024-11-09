@@ -21,8 +21,10 @@ class LIOLearner:
 
         self.mac = mac  # 包括 actor/prime actor/inc NN
         self.actor_params = list(mac.actor.parameters())
-        self.actor_optimiser = Adam(params=self.actor_params, lr=args.lr_actor)
-        # prime actor 网络只用来推理和存储，不用opt更新
+        self.actor_optimizer = Adam(params=self.actor_params, lr=args.lr_actor)
+        
+        self.actor_prime_params = list(mac.actor_prime.parameters())
+        self.actor_prime_optimizer = Adam(params=self.actor_prime_params, lr=args.lr_actor)
         
         self.inc_params = list(mac.inc.parameters())
         self.inc_optimizer = Adam(self.inc_params, lr=args.lr_inc)
@@ -45,6 +47,9 @@ class LIOLearner:
 
     def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
 
+        # 把main actor参数复制给prime保证一致
+        self.policy_prime.load_state_dict(self.policy.state_dict()) 
+
         # Get the relevant quantities
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :]
@@ -60,86 +65,59 @@ class LIOLearner:
 
         # ************************************************ mac out *****************************************************
         # inc 有一个单独的critic吗？似乎没有，完全由同一个critic驱动的？LIO？
-        mac_out = []
+        mac_out_prime = []
         inc_out = []
 
         self.mac.init_hidden(batch.batch_size)
         for t in range(batch.max_seq_length):
 
-            actor_logits = self.mac.forward_actor(batch, t=t)
+            actor_logits_prime = self.mac.forward_actor_prime(batch, t=t)
             inc_logits = self.mac.forward_inc(batch, t=t)
             # q_env_t, q_inc_t, extra_return = self.mac.forward(batch, t=t)
-            mac_out.append(actor_logits)  # [bs,n,a_env]
+            mac_out_prime.append(actor_logits_prime)  # [bs,n,a_env]
             inc_out.append(inc_logits)  # [bs,n,n,a_inc]
 
-        mac_out = th.stack(mac_out, dim=1)  # [bs,t,n,a_env]
+        mac_out_prime = th.stack(mac_out_prime, dim=1)  # [bs,t,n,a_env]
         inc_out = th.stack(inc_out, dim=1)  # [bs,t,n,n,a_inc]
 
-        pi = mac_out
+        pi_prime = mac_out_prime
 
         # avail_inc_actions = th.ones_like(q_inc) # [bs,t,n,n,a_inc]
 
         """ Update value network """
-        q_vals, critic_train_stats_log = self._train_critic(batch, rewards, terminated, actions, avail_actions,
+        V_t, V_t_target, V_t_next, V_t_target_next, r2_val, critic_train_stats_log = self._train_critic(batch, rewards, terminated, actions, avail_actions,
                                                 critic_mask, bs, max_t)
 
         actions = actions[:, :-1]
         q_vals = q_vals.detach()
 
+        # Calculate policy grad with mask，都用prime policy的参数
+        pi_prime[mask == 0] = 1.0
+        pi_taken_prime = th.gather(pi_prime, dim=3, index=actions).squeeze(3)
+        log_pi_prime_taken = th.log(pi_taken_prime + 1e-10)
+        entropy_prime = -th.sum(pi_prime * th.log(pi + 1e-10), dim=-1)
 
-        # Calculate policy grad with mask
-        pi[mask == 0] = 1.0
-        pi_taken = th.gather(pi, dim=3, index=actions).squeeze(3)
-        log_pi_taken = th.log(pi_taken + 1e-10)
-        entropy = -th.sum(pi * th.log(pi + 1e-10), dim=-1)
-
-
-        """更新 prime actor"""
-        # 把main actor参数复制给prime保证一致
-        self.policy_prime.load_state_dict(self.policy.state_dict()) 
+        V_td_error = r2_val +  self.gamma*V_t_next - V_t
 
         # 处理动作
-        actions_1hot = util.process_actions(buf.action, self.l_action)
+        # actions_1hot = util.process_actions(buf.action, self.l_action)
 
-        """要考虑梯度是从actor算还是prime算"""
-        # # 计算策略损失，用的都是prime policy
-        # log_probs_taken = th.log(th.sum(self.policy_prime(obs) * action_taken, dim=1) + 1e-15)
-        # entropy = -th.sum(self.policy_prime(obs) * th.log(self.policy_prime(obs) + 1e-15))
-        # policy_loss = -th.sum(log_probs_taken * v_td_error)
-        loss = (
+        """梯度从prime算"""
+        actor_prime_loss = (
             -(
-                (q_vals * log_pi_taken + self.args.entropy_coef * entropy) * mask
+                (V_td_error * log_pi_prime_taken + self.args.entropy_coef * entropy_prime) * mask
             ).sum()
             / mask.sum()
         )
 
-        """这时只有prime更新了，actor还是原来的参数"""
+        """更新 prime actor, actor还是原来的参数"""
         # 更新 prime 网络的参数，存储梯度
-        self.actor_optimizer.zero_grad()
-        loss.backward()
+        self.actor_prime_optimizer.zero_grad()
+        actor_prime_loss.backward()
         self.policy_grads = [p.grad.detach() for p in self.actor_prime.parameters()]  # detach 以避免梯度累积
 
-        # 如果你想手动使用这些梯度进行更新
-        self.actor_prime_optimizer.zero_grad()
-        for p, grad in zip(self.actor_params, self.policy_grads):
-            p.grad = grad  # 手动设置参数的梯度
-        self.actor_prime_optimizer.step()  # 使用优化器更新prime actor
 
-        # # 计算超梯度
-        # hypergradients = []
-        # for p, grad in zip(agent.policy.parameters(), agent.policy_grads):
-        #     # 计算超梯度（例如，损失函数对学习率的导数）
-        #     hypergrad = compute_hypergradient(p, grad)  # 你需要定义这个函数
-        #     hypergradients.append(hypergrad)
-
-        # # 更新超参数（例如，学习率）
-        # for i, param in enumerate(agent.hyperparameters):
-        #     param.data -= learning_rate * hypergradients[i]  # 使用超梯度更新超参数
-
-
-        """ Logging """
-        self.critic_training_steps += 1
-
+        """ 更新 critic target network """
         if (
             self.args.target_update_interval_or_tau > 1
             and (self.critic_training_steps - self.last_target_update_step)
@@ -151,6 +129,8 @@ class LIOLearner:
         elif self.args.target_update_interval_or_tau <= 1.0:
             self._update_targets_soft(self.args.target_update_interval_or_tau)
 
+
+        """ Logging """
         if t_env - self.log_stats_t >= self.args.learner_log_interval:
             ts_logged = len(critic_train_stats["critic_loss"])
             for key in [
@@ -163,6 +143,8 @@ class LIOLearner:
                 self.logger.log_stat(
                     key, sum(critic_train_stats[key]) / ts_logged, t_env
                 )
+
+            self.logger.log_stat("actor_prime_loss", actor_prime_loss.ite(), t_env,)
 
             self.logger.log_stat(
                 "advantage_mean",
@@ -177,7 +159,6 @@ class LIOLearner:
                 t_env,
             )
             self.log_stats_t = t_env
-
 
        
 
@@ -250,18 +231,36 @@ class LIOLearner:
 
 
     def _train_critic(self, batch, rewards, terminated, actions, avail_actions, mask, bs, max_t):
+        
         # Optimise critic
-        with th.no_grad():
-            target_vals = target_critic(batch)
-            target_vals = target_vals.squeeze(3)
+        # with th.no_grad():
+        V_t = self.critic(batch, t)
+        V_t[:, t] = V_t.view(bs, self.n_agents, self.n_actions)
+
+        V_t_target = self.target_critic(batch, t)
+        V_t_target[:, t] = V_t_target.view(bs, self.n_agents, self.n_actions).detach()
+
+        V_t_next = self.critic(batch, t+1)  # 输入 next obs
+        V_t_next[:, t+1] = V_t_next.view(bs, self.n_agents, self.n_actions)
+
+        V_t_target_next = self.target_critic(batch, t+1) # 输入 next obs
+        V_t_target_next[:, t+1] = V_t_target_next.view(bs, self.n_agents, self.n_actions).detach()
+
+        effect_ratio = self.args.incentive_ratio
+        cost_ratio = self.args.incentive_cost
+
+        # incentive values
+        inc_rewards_list = batch["actions_inc_list"][:, :-1]  # [bs,t-1,n,n,1]
+        recieved_rewards = batch["recieved_rewards"][:, :-1]  # [bs,t-1,n,n,1]
+
+
+        r2_val = rewards + recieved_rewards
+        if self.include_cost_in_chain_rule:
+            inc_loss = cost_ratio * inc_rewards_list.squeeze(:)
+            r2_val -= inc_loss
             
-        # target_q_vals = self.target_critic(batch)[:, :]
-        # targets_taken = th.gather(target_q_vals, dim=3, index=actions).squeeze(3)
+        v_td_error = r2_val + self.gamma * V_t_target_next - V_t
 
-        # Calculate td-lambda targets
-        targets = build_td_lambda_targets(rewards, terminated, mask, targets_taken, self.n_agents, self.args.gamma, self.args.td_lambda)
-
-        q_vals = th.zeros_like(target_q_vals)[:, :-1]
 
         running_log = {
             "critic_loss": [],
@@ -271,89 +270,23 @@ class LIOLearner:
             "q_taken_mean": [],
         }
 
+        # 平方loss，没有考虑mask
+        loss = (v_td_error ** 2).sum()
+        self.critic_optimizer.zero_grad()
+        loss.backward()
+        grad_norm = th.nn.utils.clip_grad_norm_(self.critic_params, self.args.grad_norm_clip)
+        self.critic_optimizer.step()
+        self.critic_training_steps += 1
 
-        # ******************************************** inc rewards *****************************************************
-        effect_ratio = self.args.incentive_ratio
-        cost_ratio = self.args.incentive_cost
+        running_log["critic_loss"].append(loss.item())
+        running_log["critic_grad_norm"].append(grad_norm)
+        # mask_elems = mask_t.sum().item()
+        running_log["td_error_abs"].append(v_td_error.abs().sum().item())  # 没考虑 mas
+        # running_log["q_taken_mean"].append((q_taken * mask_t).sum().item() / mask_elems)
+        # running_log["target_mean"].append((targets_t * mask_t).sum().item() / mask_elems)
 
-        # incentive values
-        inc_rewards_list = batch["actions_inc_list"][:, :-1]  # [bs,t-1,n,n,1]
-        recieved_rewards = batch["recieved_rewards"][:, :-1]  # [bs,t-1,n,n,1]
-
-        if self.args.cost_chain_rule:
-            inc_loss = cost_ratio * inc_rewards_list.squeeze(:)
-
-        """这里要考虑inc rewards是否用于critic更新，这部分似乎应该放到train critic里"""
-        r2_val = rewards + recieved_rewards
-        if self.include_cost_in_chain_rule:
-            r2_val -= inc_loss
-
-
-
-        v = self.critic()
-        v_next = self.target_critic()
-
-        # 计算 TD 错误
-        v_td_error = r2_val + self.gamma * v_next - v
-
-
-
-
-        for t in reversed(range(rewards.size(1))):
-            mask_t = mask[:, t].expand(-1, self.n_agents)
-            if mask_t.sum() == 0:
-                continue
-
-            q_t = self.critic(batch, t)
-            q_vals[:, t] = q_t.view(bs, self.n_agents, self.n_actions)
-            q_taken = th.gather(q_t, dim=3, index=actions[:, t:t+1]).squeeze(3).squeeze(1)
-            targets_t = targets[:, t]
-
-            td_error = (q_taken - targets_t.detach())
-
-            # 0-out the targets that came from padded data
-            masked_td_error = td_error * mask_t
-
-            # Normal L2 loss, take mean over actual data
-            loss = (masked_td_error ** 2).sum() / mask_t.sum()
-            self.critic_optimiser.zero_grad()
-            loss.backward()
-            grad_norm = th.nn.utils.clip_grad_norm_(self.critic_params, self.args.grad_norm_clip)
-            self.critic_optimiser.step()
-            self.critic_training_steps += 1
-
-            running_log["critic_loss"].append(loss.item())
-            running_log["critic_grad_norm"].append(grad_norm)
-            mask_elems = mask_t.sum().item()
-            running_log["td_error_abs"].append((masked_td_error.abs().sum().item() / mask_elems))
-            running_log["q_taken_mean"].append((q_taken * mask_t).sum().item() / mask_elems)
-            running_log["target_mean"].append((targets_t * mask_t).sum().item() / mask_elems)
-
-        return q_vals, running_log
+        return V_t, V_t_target, V_t_next, V_t_target_next, r2_val, running_log
     
-         # state = ep_batch.obs  # 获取当前状态
-        # next_state = ep_batch.obs_next  # 获取下一个状态
-        # n_steps = ep_batch.n_steps  # 获取步数
-        # rewards = ep_batch.   # 奖励
-
-        # v_next = self.mac.forward_value(self, next_state, t_env, test_mode=False, learning_mode=False)
-        # v = self.mac.forward_value(self, state, t_env, test_mode=False, learning_mode=False)
-        # """这里要加一个target mac clone"""
-        # v_target = self.clone_mac
-
-        # # 计算优势
-        # if self.include_cost_in_chain_rule:
-        #     total_reward = [buf.reward[idx] + buf.r_from_others[idx] - buf.r_given[idx] for idx in range(n_steps)]
-        # else:
-        #     total_reward = [buf.reward[idx] + buf.r_from_others[idx] for idx in range(n_steps)]
-        
-        # # 计算 TD 误差
-        # td_error = th.tensor(total_reward, dtype=th.float32) + self.gamma * v_target - v
-
-        # # 更新价值网络
-        # agent.critic_optimizer.zero_grad()
-        # td_error.backward()  # 注意这里是 backward 而不是 backwards
-        # agent.critic_optimizer.step()
 
 
 
@@ -361,6 +294,24 @@ class LIOLearner:
         """用 prime policy 更新主策略"""
         for agent in self.list_agents:
             agent.policy = agent.policy_prime
+
+
+        # 如果你想手动使用这些梯度进行更新
+        # self.actor_prime_optimizer.zero_grad()
+        # for p, grad in zip(self.actor_params, self.policy_grads):
+        #     p.grad = grad  # 手动设置参数的梯度
+        # self.actor_prime_optimizer.step()  # 使用优化器更新prime actor
+
+        # # 计算超梯度
+        # hypergradients = []
+        # for p, grad in zip(agent.policy.parameters(), agent.policy_grads):
+        #     # 计算超梯度（例如，损失函数对学习率的导数）
+        #     hypergrad = compute_hypergradient(p, grad)  # 你需要定义这个函数
+        #     hypergradients.append(hypergrad)
+
+        # # 更新超参数（例如，学习率）
+        # for i, param in enumerate(agent.hyperparameters):
+        #     param.data -= learning_rate * hypergradients[i]  # 使用超梯度更新超参数
 
 
 
