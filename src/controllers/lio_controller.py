@@ -194,7 +194,8 @@ class LIOMAC(nn.Module):
 
     # 构建list agents
     def _build_agents(self, input_shape):
-        self.agent = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg) for i in range(self.num_agents)]
+        self.agent = agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg) 
+        # self.agent = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg) for i in range(self.num_agents)]
 
 
     def _build_inputs(self, batch, t):

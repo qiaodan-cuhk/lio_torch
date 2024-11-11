@@ -19,8 +19,11 @@ class LIOLearner:
         self.logger = logger
         self.scheme = scheme
 
+
+        # 这里有个问题是，optimizer到底是直接优化整个list LIO agents，还是每个agent都有一个optimizer？
+        # 看上去 critic 和 actor 更新符合前者，而 inc 的优化更像后者，要考虑一致
         self.mac = mac  # 包括 actor/prime actor/inc NN
-        self.actor_params = list(mac.actor.parameters())
+        self.actor_params = list(mac.actor.parameters())   # parameters_actor
         self.actor_optimizer = Adam(params=self.actor_params, lr=args.lr_actor)
         
         self.actor_prime_params = list(mac.actor_prime.parameters())
@@ -42,6 +45,9 @@ class LIOLearner:
 
         # 用于计算 reward 更新
         self.policy_new = PolicyNewCNN if self.image_obs else PolicyNewMLP
+
+        self.list_agents = [Lio * n] = self.mac.agent ？
+        self.list_policy_new = [0 for x in range(self.n_agents)]
         
 
 
@@ -165,7 +171,14 @@ class LIOLearner:
     def train_reward(self, buffer, new_buffer, t_env):
         """训练激励函数"""
 
+
+
+
         for agent in self.list_agents:
+            
+            # 把 old traj和 new traj 的数据提出来
+            buf_self = buffer[agent.agent_id]
+            buf_self_new = new_buffer[agent.agent_id]
 
             agent.reg_coeff = self.agent.update_reg_coeff(self, performance, prev_reward_env).
 
@@ -175,10 +188,53 @@ class LIOLearner:
             if agent.can_give:
                 
                 for inc_to_agent in self.list_of_all_agents:
+                    
+                    # 其他agent的buffer提出来
+                    other_agent_it = inc_to_agent.agent_id
+                    other_buff = buffer[]
+                    other_buff_new = new_buffer[]
+
+                    # 用 old buffer 轨迹观测数据
+                    # 这个其实是存在每个agent自己的agent.v_new里用于计算loss了，改一下逻辑，提到外面循环
+                    other_v_next = inc_to_agent.mac.critic()
+                    other_v = inc_to_agent.mac.critic()
+
+                    """考虑是否要加 ijk 那个逻辑"""
+                    inc_to_agent.action_others = util.get_action_others_1hot_batch(
+                    buf_other.action_all, other_id, agent.l_action_for_r)
+
+                    other_policy_new = list_policy_new[inc.id]
+                    other_action_new = new_buffer
+                    other_obs_new = new_buffer
+                    # 要用这个计算 log probs prime，使用new buffer的obs和action
+                    # 还要把自己的 new buffer obs和action输入进整个list_policy_new
+
+                    if self.include_cost_in_chain_rule:
+                        new_total_reward = new_buffer.reward + new_buffer.from_others - new_buffer.give_out_list
+                    else:
+                        new_total_reward = new_buffer.reward
+
+                    #计算每个agent的时候，用自己的loss，new buffer V loss & reward
+                    new_td_error = new_total_reward + new_self_v_next*gamma - new_self_v
+
+
+                    """一些需要确认的变量"""
+
 
                     # 忽略对于自身的奖励
                     if agent.agent_id == inc_to_agent.agent_id and not agent.include_cost_in_chain_rule:
                         continue
+                        
+                    # 假设 agent.policy_params 是一个包含所有参数的列表
+                    for param, grad in zip(inc_to_agent.policy_params, inc_to_agent.policy_grads):
+                        param.data -= agent.lr_actor * grad  # 直接更新参数
+
+                    # 创建新的策略实例
+                    other_policy_new = inc_to_agent.policy_new(
+                        inc_to_agent.dim_obs, inc_to_agent.l_action, inc_to_agent.agent_name).load_dict(inc_to_agent.policy_params)  # 这里不需要传递参数字典
+                    self.list_policy_new[inc_to_agent.agent_id] = other_policy_new
+
+                    # 这里有没有可能直接用self.actor prime代替？tf为了创建网络所以不得不这么搞
 
 
                     # 直接复制 prime policy 的参数
@@ -191,9 +247,11 @@ class LIOLearner:
                     )
                     agent.list_policy_new[inc_to_agent.agent_id] = other_policy_new
 
+
+                    # 这里要注意输入的数据是什么，other actions是什么，new buffer的数据
                     log_probs_taken = th.log(
                         th.sum(other_policy_new.probs * other_policy_new.action_taken, dim=1) + 1e-15)  # 加上小常数以避免 log(0)
-                    loss_term = -th.sum(log_probs_taken * self.v_td_error)  # v_td_error 是用前面的critic update计算的
+                    loss_term = -th.sum(log_probs_taken * new_td_error)  # new_td_error 是用新轨迹的obs计算的
                     list_reward_loss.append(loss_term)  # 第 agent 个对于所有 inc_to_agent 的loss list
 
                     if agent.include_cost_in_chain_rule:
@@ -212,13 +270,15 @@ class LIOLearner:
                             total_given = th.sum(th.square(self.reward_function * reverse_1hot))  # 计算平方和
 
                         if self.separate_cost_optimizer:
-                            self.reward_loss = th.sum(th.stack(list_reward_loss))  # 直接求和
+                            reward_loss = th.sum(th.stack(list_reward_loss))  # 直接求和
                         else:
-                            agent.reward_loss = th.sum(th.stack(list_reward_loss)) + self.reg_coeff * total_given  # 结合正则化项
+                            reward_loss = th.sum(th.stack(list_reward_loss)) + self.reg_coeff * total_given  # 结合正则化项
 
-            agent.inc_optimizer.zero_grad()
-            agent.reward_loss.backward()
-            agent.inc_optimizer.step()
+
+                # 这里要考虑更新用agent还是self
+                self.inc_optimizer.zero_grad()
+                reward_loss.backward()
+                self.inc_optimizer.step()
 
 
         # 更新目标网络
@@ -226,6 +286,89 @@ class LIOLearner:
 
         # 用更新后的prime去覆盖 policy
         self.update_policy_from_prime()
+
+    """gpt的写法"""
+    def train_and_create_reward_op(self, list_buf, list_buf_new, epsilon, reg_coeff=1e-3):
+        buf_self = list_buf[self.agent_id]
+        buf_self_new = list_buf_new[self.agent_id]
+        n_steps = len(buf_self.obs)
+        ones = torch.ones(n_steps)  # 使用 PyTorch 的张量
+
+        # 初始化奖励损失列表
+        list_reward_loss = []
+        self.list_policy_new = [0 for _ in range(self.n_agents)]
+        
+        # 处理其他代理的数据
+        for agent in self.list_of_agents:
+            other_id = agent.agent_id
+            if other_id == self.agent_id:
+                continue
+            buf_other = list_buf[other_id]
+
+            # 计算 V 值
+            v_next = agent.v(buf_other.obs_next).detach()  # detach 防止梯度累积
+            v = agent.v(buf_other.obs).detach()
+
+            actions_other_1hot = util.process_actions(buf_other.action, self.l_action)
+
+            # 计算其他代理的策略更新
+            other_policy_params_new = {}
+            for grad, var in zip(agent.policy_grads, agent.policy_params):
+                other_policy_params_new[var] = var - agent.lr_actor * grad
+            other_policy_new = agent.policy_new(
+                other_policy_params_new, agent.dim_obs, agent.l_action,
+                agent.agent_name)
+            self.list_policy_new[agent.agent_id] = other_policy_new
+
+            log_probs_taken = torch.log(
+                torch.sum(other_policy_new.probs * other_policy_new.action_taken, dim=1))
+            loss_term = -torch.sum(log_probs_taken * self.v_td_error)
+            list_reward_loss.append(loss_term)
+
+        # 处理自身代理的数据
+        if self.include_cost_in_chain_rule:
+            action_self_1hot = util.process_actions(buf_self.action, self.l_action)
+            v_next = self.v(buf_self.obs_next).detach()
+            v = self.v(buf_self.obs).detach()
+            action_self_1hot_new = util.process_actions(buf_self_new.action, self.l_action)
+            self_policy_new = self.list_policy_new[self.agent_id]
+
+            # 计算总奖励
+            total_reward = buf_self_new.reward + buf_self_new.r_from_others - buf_self_new.r_given
+            self.v_td_error = total_reward + self.gamma * v_next - v
+
+            feed = {
+                self.action_taken: action_self_1hot,
+                self.r_ext: buf_self.reward,
+                self.epsilon: epsilon,
+                self.v_next_ph: v_next,
+                self.v_ph: v,
+                self_policy_new.obs: buf_self_new.obs,
+                self_policy_new.action_taken: action_self_1hot_new,
+                self.obs: buf_self.obs,
+                self.action_others: util.get_action_others_1hot_batch(
+                    buf_self.action_all, self.agent_id, self.l_action_for_r),
+                self.ones: ones
+            }
+        else:
+            self.v_td_error = buf_self_new.reward  # 直接使用奖励
+            feed = {
+                self.obs: buf_self.obs,
+                self.action_others: util.get_action_others_1hot_batch(
+                    buf_self.action_all, self.agent_id, self.l_action_for_r),
+                self.ones: ones
+            }
+
+        # 计算损失
+        if self.include_cost_in_chain_rule:
+            self.reward_loss = torch.sum(torch.stack(list_reward_loss))
+        else:
+            self.reward_loss = torch.sum(torch.stack(list_reward_loss))
+
+        # 反向传播
+        self.optimizer.zero_grad()  # 清空梯度
+        self.reward_loss.backward()  # 反向传播
+        self.optimizer.step()  # 更新参数
 
 
 
