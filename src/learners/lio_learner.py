@@ -3,10 +3,6 @@ from components.episode_buffer import EpisodeBatch
 import torch as th
 from torch.optim import RMSprop, Adam
 
-from pyclustering.cluster.xmeans import xmeans
-from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
-
-
 from ..modules.critics import REGISTRY as critic_resigtry
 
 # logger 要增加一些测量incentivize的metric
@@ -33,17 +29,6 @@ class LIOLearner:
         self.inc_params = [list(agent.inc.parameters()) for agent in self.agents]  
         self.inc_optimizers = [Adam(params=params, lr=args.lr_inc) for params in self.inc_params] 
 
-        # if share params, use these code
-        # self.actor_params = list(mac.actor.parameters())   # parameters_actor
-        # self.actor_optimizer = Adam(params=self.actor_params, lr=args.lr_actor)
-        # self.actor_prime_params = list(mac.actor_prime.parameters())
-        # self.actor_prime_optimizer = Adam(params=self.actor_prime_params, lr=args.lr_actor)
-        # self.inc_params = list(mac.inc.parameters())
-        # self.inc_optimizer = Adam(self.inc_params, lr=args.lr_inc)
-
-        # a little wasteful to deepcopy (e.g. duplicates action selector), but should work for any MAC
-        # self.target_mac = copy.deepcopy(mac)
-
         # 假设 self.critic 是一个包含多个独立 critic 网络的列表
         self.critics = [critic_resigtry[args.critic_type](scheme, args) for i in range(self.n_agents)] # args.critic_type = rgb/not
         self.target_critics = copy.deepcopy(self.critics)
@@ -54,10 +39,6 @@ class LIOLearner:
 
         self.gamma = 
 
-        # 用于计算 reward 更新, 可以考虑丢掉
-        self.policy_new = PolicyNewCNN if self.image_obs else PolicyNewMLP
-        self.list_agents = [Lio * n] = self.mac.agent ？
-        self.list_policy_new = [0 for x in range(self.n_agents)]
         
 
 
@@ -68,7 +49,6 @@ class LIOLearner:
             # 获取当前 agent 的 actor 和 actor_prime
             actor_params = agent.actor.state_dict()  # 获取 actor 的参数
             agent.actor_prime.load_state_dict(actor_params)  # 将参数加载到 actor_prime
-        # self.policy_prime.load_state_dict(self.policy.state_dict()) 
 
         # Get the relevant quantities
         rewards = batch["reward"][:, :-1]
@@ -84,9 +64,7 @@ class LIOLearner:
 
         # ************************************************ mac out *****************************************************
         mac_out_prime = []
-        # inc_out = []
 
-        """在learner里，调用forward actor返回的是所有agent，所有动作的logits，考虑一下怎么 logits[i] 来只用某一个agent的，或者添加id"""
         # self.mac.init_hidden(batch.batch_size)  # RNN agent 才用
 
         # 检查数据格式
@@ -99,10 +77,7 @@ class LIOLearner:
             # inc_out.append(inc_logits)  # [bs,n,n,a_inc]
 
         mac_out_prime = th.stack(mac_out_prime, dim=1)  # [bs,t,n,a_env]
-        # inc_out = th.stack(inc_out, dim=1)  # [bs,t,n,n,a_inc]
-
         pi_prime = mac_out_prime
-        # avail_inc_actions = th.ones_like(q_inc) # [bs,t,n,n,a_inc]
 
         """ Update value network """
         V_t, V_t_next, r2_val, critic_train_stats_log = self._train_critic(batch, rewards, terminated, actions, avail_actions,
@@ -114,8 +89,6 @@ class LIOLearner:
         # Calculate policy grad with mask，都用prime policy的参数，这里计算entropy表示prime pi必然是一个softmax分布
         pi_prime[mask == 0] = 1.0
         pi_taken_prime = th.gather(pi_prime, dim=3, index=actions).squeeze(3)  # 所有agent的prime
-        log_pi_prime_taken = th.log(pi_taken_prime + 1e-10)
-        entropy_prime = -th.sum(pi_prime * th.log(pi_prime + 1e-10), dim=-1)
 
         V_td_error = r2_val +  self.gamma*V_t_next - V_t
 
@@ -145,12 +118,6 @@ class LIOLearner:
 
             actor_prime_losses.append(actor_prime_loss_i)
 
-        # actor_prime_loss = (
-        #     -(
-        #         (V_td_error * log_pi_prime_taken + self.args.entropy_coef * entropy_prime) * mask
-        #     ).sum()
-        #     / mask.sum()
-        # )
 
         """更新 prime actor, actor还是原来的参数"""
         # 对每个代理的损失进行反向传播,存储梯度用不上了
@@ -158,13 +125,6 @@ class LIOLearner:
             self.actor_prime_optimizers[i].zero_grad()  # 清除之前的梯度
             actor_prime_losses[i].backward()  # 反向传播
             self.actor_prime_optimizers[i].step()  # 更新参数
-
-        # 更新 prime 网络的参数，存储梯度
-        # self.actor_prime_optimizer.zero_grad()
-        # actor_prime_loss.backward()
-        # self.actor_prime_optimizer.step()
-        # self.policy_grads = [p.grad.detach() for p in self.actor_prime.parameters()]  # detach 以避免梯度累积
-
 
         """ 更新 critic target network """
         if (
@@ -229,7 +189,6 @@ class LIOLearner:
             agent.update_reg_coeff(self, performance, prev_reward_env).  # 更新 agent.reg_coeff
 
             list_reward_loss = []  # 用于表示当前agent对于所有其他agent奖励的loss，包括自己但是mask为0
-            agent.list_policy_new = [0 for x in range(self.n_agents)]
 
             if agent.can_give:
                 for inc_id, inc_to_agent in enumerate(self.agents):
@@ -237,10 +196,7 @@ class LIOLearner:
                         # In this case, cost for giving is not accounted in chain rule, so the agent can skip over itself
                         continue
                     
-                    # 其他agent的buffer提出来
-                    other_agent_it = inc_to_agent.agent_id
-                    other_buff = buffer[]
-                    other_buff_new = new_buffer[]
+
 
                     # 用 old buffer 轨迹观测数据
                     # 这个其实是存在每个agent自己的agent.v_new里用于计算loss了，改一下逻辑，提到外面循环
@@ -251,12 +207,7 @@ class LIOLearner:
                     inc_to_agent.action_others = util.get_action_others_1hot_batch(
                     buf_other.action_all, other_id, agent.l_action_for_r)
 
-                    other_policy_new = list_policy_new[inc.id]
-                    other_action_new = new_buffer
-                    other_obs_new = new_buffer
-                    # 要用这个计算 log probs prime，使用new buffer的obs和action
-                    # 还要把自己的 new buffer obs和action输入进整个list_policy_new
-
+                    
                     if self.include_cost_in_chain_rule:
                         new_total_reward = new_buffer.reward + new_buffer.from_others - new_buffer.give_out_list
                     else:
@@ -277,14 +228,20 @@ class LIOLearner:
 
 
                     """在learner里，调用forward actor返回的是所有agent，所有动作的logits，考虑一下怎么 logits[i] 来只用某一个agent的，或者添加id"""
-                    # 这里要注意输入的数据是什么，other actions是什么，new buffer的数据
 
-                    # 这里是新定义的 policynew NN，有两个 self.action taken & self.probs 分别代表actions list和输出
-                    # lio是把参数弄进去单独搞的，我们可以直接从actor prime中提取
+                    other_action_new = new_buffer[inc_id]["actions"]
+                    other_obs_new = new_buffer[inc_id]["obs"]?
+
+                    actor_logits_new = other_policy_new.forward(other_obs_new)
+                    actor_probs_new = th.nn.functional.softmax(actor_logits_new)
+                    # 把其他agent的选择动作 new buffer 处理成 1hot 用于乘法
+                    taken_action_1hot_new = util.process_actions(other_action_new, self.l_action) ？
                     log_probs_taken = th.log(
-                        th.sum(other_policy_new.probs * other_policy_new.action_taken, dim=1) + 1e-15)  # 加上小常数以避免 log(0)
-                    loss_term = -th.sum(log_probs_taken * new_td_error)  # new_td_error 是用新轨迹的obs计算的
-                    list_reward_loss.append(loss_term)  # 第 agent 个对于所有 inc_to_agent 的loss list
+                        th.sum(actor_probs_new * taken_action_1hot_new, dim=1) + 1e-15)  
+                    # action_taken [bs, 1hot len actions]，两个相乘得到选择的动作的prob
+                    loss_term = -th.sum(log_probs_taken * new_td_error)  
+                    list_reward_loss.append(loss_term) 
+
 
                     if agent.include_cost_in_chain_rule:
                         agent.reward_loss = th.sum(th.stack(list_reward_loss)) 
@@ -305,15 +262,9 @@ class LIOLearner:
                         else:
                             reward_loss = th.sum(th.stack(list_reward_loss)) + self.reg_coeff * total_given  # 结合正则化项
 
-
-                # 这里要考虑更新用agent还是self
                 self.inc_optimizers[id].zero_grad()
                 reward_loss.backward()
                 self.inc_optimizers[id].step()
-
-
-        # # 更新目标网络??????
-        # self.update_target_network()
 
         # 用更新后的prime去覆盖 policy
         self.update_policy_from_prime()
@@ -321,13 +272,10 @@ class LIOLearner:
     # 这里要改成 list 形式的
     def _train_critic(self, batch, rewards, terminated, actions, avail_actions, mask, bs, max_t):
         
-        # Optimise critic
+        # forward get value, 不需要 grad 做推理
         # with th.no_grad():
         V_t = self.critics(batch, t)
         V_t[:, t] = V_t.view(bs, self.n_agents, self.n_actions)
-
-        # V_t_target = self.target_critics(batch, t)
-        # V_t_target[:, t] = V_t_target.view(bs, self.n_agents, self.n_actions).detach()
 
         V_t_next = self.critics(batch, t+1)  # 输入 next obs
         V_t_next[:, t+1] = V_t_next.view(bs, self.n_agents, self.n_actions)
@@ -341,7 +289,6 @@ class LIOLearner:
         # incentive values
         inc_rewards_list = batch["actions_inc_list"][:, :-1]  # [bs,t-1,n,n,1]
         recieved_rewards = batch["recieved_rewards"][:, :-1]  # [bs,t-1,n,n,1]
-
 
         r2_val = rewards + recieved_rewards
         if self.include_cost_in_chain_rule:
@@ -393,9 +340,6 @@ class LIOLearner:
  
 
     """也考虑是不是 target critic """
-    # def _update_targets(self):
-    #     self.target_mac.load_state(self.mac)
-    #     self.logger.console_logger.info("Updated target network")
 
     def _update_targets_hard(self):
         for critic, target_critic in zip(self.critics, self.target_critics):
