@@ -6,6 +6,9 @@ This repo is based on homo-lio code with pymarl framework. We adapt LIO from tf 
 
 - v0.2 2024.10.28 Add lio_learner. 
 
+- v0.3 2024.11.10 保证一致性，从 list commit 下一个版本改成 ind learning，在mac里维护一个agent list，修改 learner train 的逻辑
+
+
 #### ToDo List
 - lio_controller line 74/74 有问题
 - lio_controller 里的 select reward incentive 函数没写

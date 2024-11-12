@@ -1,9 +1,18 @@
 import torch as th
 from torch.distributions import Categorical
 from .epsilon_schedules import DecayThenFlatSchedule
+from torch.distributions.one_hot_categorical import OneHotCategorical
 
 
-class MultinomialActionSelector(): #A2C选这个
+REGISTRY = {}
+# REGISTRY["multinomial"] = MultinomialActionSelector
+# REGISTRY["soft_policies"] = SoftPoliciesSelector
+# REGISTRY["epsilon_greedy"] = EpsilonGreedyActionSelector
+# REGISTRY["gumbel"] = GumbelSoftmaxMultinomialActionSelector
+# REGISTRY["gaussian"] = GaussianActionSelector
+
+
+class MultinomialActionSelector():
 
     def __init__(self, args):
         self.args = args
@@ -11,46 +20,56 @@ class MultinomialActionSelector(): #A2C选这个
         self.schedule = DecayThenFlatSchedule(args.epsilon_start, args.epsilon_finish, args.epsilon_anneal_time,
                                               decay="linear")
         self.epsilon = self.schedule.eval(0)
-
         self.test_greedy = getattr(args, "test_greedy", True)
-        self.save_probs = getattr(self.args, 'save_probs', False)
 
     def select_action(self, agent_inputs, avail_actions, t_env, test_mode=False):
         masked_policies = agent_inputs.clone()
-        masked_policies[avail_actions == 0] = 0
+        masked_policies[avail_actions == 0.0] = 0.0
 
+        self.epsilon = self.schedule.eval(t_env)
 
         if test_mode and self.test_greedy:
             picked_actions = masked_policies.max(dim=2)[1]
         else:
-            self.epsilon = self.schedule.eval(t_env)
-
-            epsilon_action_num = (avail_actions.sum(-1, keepdim=True) + 1e-8)
-            masked_policies = ((1 - self.epsilon) * masked_policies
-                        + avail_actions * self.epsilon/epsilon_action_num)
-            masked_policies[avail_actions == 0] = 0
-            
             picked_actions = Categorical(masked_policies).sample().long()
 
-        if self.save_probs:
-            return picked_actions, masked_policies
-        else:
-            return picked_actions
+        return picked_actions
     
+# 这个写法是pymarl2的写法，考虑了额外的epsilon探索
+# class MultinomialActionSelector(): #A2C选这个
 
-    # def select_action(self, agent_inputs, avail_actions, t_env, test_mode=False):
-    #     masked_policies = agent_inputs.clone()
-    #     masked_policies[avail_actions == 0.0] = 0.0
+#     def __init__(self, args):
+#         self.args = args
 
-    #     self.epsilon = self.schedule.eval(t_env)
+#         self.schedule = DecayThenFlatSchedule(args.epsilon_start, args.epsilon_finish, args.epsilon_anneal_time,
+#                                               decay="linear")
+#         self.epsilon = self.schedule.eval(0)
 
-    #     if test_mode and self.test_greedy:
-    #         picked_actions = masked_policies.max(dim=2)[1]
-    #     else:
-    #         picked_actions = Categorical(masked_policies).sample().long()
+#         self.test_greedy = getattr(args, "test_greedy", True)
+#         self.save_probs = getattr(self.args, 'save_probs', False)
 
-    #     return picked_actions
+#     def select_action(self, agent_inputs, avail_actions, t_env, test_mode=False):
+#         masked_policies = agent_inputs.clone()
+#         masked_policies[avail_actions == 0] = 0
 
+
+#         if test_mode and self.test_greedy:
+#             picked_actions = masked_policies.max(dim=2)[1]
+#         else:
+#             self.epsilon = self.schedule.eval(t_env)
+
+#             epsilon_action_num = (avail_actions.sum(-1, keepdim=True) + 1e-8)
+#             masked_policies = ((1 - self.epsilon) * masked_policies
+#                         + avail_actions * self.epsilon/epsilon_action_num)
+#             masked_policies[avail_actions == 0] = 0
+            
+#             picked_actions = Categorical(masked_policies).sample().long()
+
+#         if self.save_probs:
+#             return picked_actions, masked_policies
+#         else:
+#             return picked_actions
+    
 
 
 class EpsilonGreedyActionSelector():
@@ -95,8 +114,98 @@ class SoftPoliciesSelector():
         return picked_actions
 
 
-REGISTRY = {}
+class GumbelSoftmax(OneHotCategorical):
+
+    def __init__(self, logits, probs=None, temperature=1):
+        super(GumbelSoftmax, self).__init__(logits=logits, probs=probs)
+        self.eps = 1e-20
+        self.temperature = temperature
+
+    def sample_gumbel(self):
+        U = self.logits.clone()
+        U.uniform_(0, 1)
+        return -th.log( -th.log( U + self.eps))
+
+    def gumbel_softmax_sample(self):
+        y = self.logits + self.sample_gumbel()
+        return th.softmax( y / self.temperature, dim=-1)
+
+    def hard_gumbel_softmax_sample(self):
+        y = self.gumbel_softmax_sample()
+        return (th.max(y, dim=-1, keepdim=True)[0] == y).float()
+
+    def rsample(self):
+        return self.gumbel_softmax_sample()
+
+    def sample(self):
+        return self.rsample().detach()
+
+    def hard_sample(self):
+        return self.hard_gumbel_softmax_sample()
+
+def multinomial_entropy(logits):
+    assert logits.size(-1) > 1
+    return GumbelSoftmax(logits=logits).entropy()
+
+class GumbelSoftmaxMultinomialActionSelector():
+
+    def __init__(self, args):
+        self.args = args
+
+        self.schedule = DecayThenFlatSchedule(args.epsilon_start, args.epsilon_finish, args.epsilon_anneal_time,
+                                              decay="linear")
+        self.epsilon = self.schedule.eval(0)
+        self.test_greedy = getattr(args, "test_greedy", True)
+        self.save_probs = getattr(self.args, 'save_probs', False)
+
+    def select_action(self, agent_logits, avail_actions, t_env, test_mode=False):
+        masked_policies = agent_logits.clone()
+        self.epsilon = self.schedule.eval(t_env)
+
+        if test_mode and self.test_greedy:
+            picked_actions = masked_policies.max(dim=2)[1]
+        else:
+            picked_actions = GumbelSoftmax(logits=masked_policies).sample()
+            picked_actions = th.argmax(picked_actions, dim=-1).long()
+
+        if self.save_probs:
+            return picked_actions, masked_policies
+        else:
+            return picked_actions
+
+class GaussianActionSelector():
+
+    def __init__(self, args):
+        self.args = args
+        self.test_greedy = getattr(args, "test_greedy", True)
+
+    def select_action(self, mu, sigma, test_mode=False):
+        # Expects the following input dimensions:
+        # mu: [b x a x u]
+        # sigma: [b x a x u x u]
+        assert mu.dim() == 3, "incorrect input dim: mu"
+        assert sigma.dim() == 3, "incorrect input dim: sigma"
+        sigma = sigma.view(-1, self.args.n_agents, self.args.n_actions, self.args.n_actions)
+
+        if test_mode and self.test_greedy:
+            picked_actions = mu
+        else:
+            dst = th.distributions.MultivariateNormal(mu.view(-1,
+                                                              mu.shape[-1]),
+                                                      sigma.view(-1,
+                                                                 mu.shape[-1],
+                                                                 mu.shape[-1]))
+            try:
+                picked_actions = dst.sample().view(*mu.shape)
+            except Exception as e:
+                a = 5
+                pass
+        return picked_actions
+
+
 
 REGISTRY["multinomial"] = MultinomialActionSelector
 REGISTRY["soft_policies"] = SoftPoliciesSelector
 REGISTRY["epsilon_greedy"] = EpsilonGreedyActionSelector
+REGISTRY["gumbel"] = GumbelSoftmaxMultinomialActionSelector
+REGISTRY["gaussian"] = GaussianActionSelector

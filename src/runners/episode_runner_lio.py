@@ -76,7 +76,7 @@ class EpisodeRunner_LIO:
                 else:
                     actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
             else:
-                actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
+                actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
 
             actions_env = actions % self.args.n_actions
             reward, terminated, env_info = self.env.step(actions_env[0])

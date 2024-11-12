@@ -8,6 +8,7 @@ from ..networks import ActorConv, IncentiveConv, Actor, Incentive
 
 # agent 只用来定义 actor 的网络结构，输入 obs 输出 n_actions 的NN forward
 
+"""这里 args env和alg考虑替换成scheme和group"""
 class LIOAgent(nn.Module):
     def __init__(self, input_shape, agent_id, args_env, args_alg):
         super(LIOAgent, self).__init__()
@@ -55,51 +56,53 @@ class LIOAgent(nn.Module):
         self.include_cost_in_chain_rule = self.args_alg.include_cost_in_chain_rule
         assert not (self.separate_cost_optimizer and self.include_cost_in_chain_rule)
 
+        other_actions_shape = l_actions*(n_agengts-1)?  # flattened 1hot other actions 
+
         if args_env.rgb_input:
             self.actor = ActorConv(input_shape, args_env, args_alg)
             self.actor_prime = ActorConv(input_shape, args_env, args_alg)
-            self.inc = IncentiveConv(input_shape, args_env, args_alg)
+            self.inc = IncentiveConv(input_shape+other_actions_shape, args_env, args_alg)
         else:
             self.actor = Actor(input_shape, args_env, args_alg)
             self.actor_prime = Actor(input_shape, args_env, args_alg)
-            self.inc = Incentive(input_shape, args_env, args_alg)
+            self.inc = Incentive(input_shape+other_actions_shape, args_env, args_alg)
 
         """lio代码里想要把激励限制在[0, r_multiplier]范围内，所以激励输出时先过一个sigmoid，
         在之后调用的时候再乘一个r_multiplier的超参数，比如ER和cleanup里的r_multiplier是2.0，ipd里面是3.0"""
 
-    """ self.mac.params_env/inc 调用网络参数 """
-    def parameters_env(self):
-        params = []
-        if self.args.rgb_input:
-            params += list(self.actor.parameters())
+    # """ self.mac.params_env/inc 调用网络参数，用不到了，learner里已经单独指定好了 """
+    # def parameters_env(self):
+    #     params = []
+    #     if self.args.rgb_input:
+    #         params += list(self.actor.parameters())
 
-        for n, p in self.named_parameters():
-            if 'env' in n:
-                params.append(p)
+    #     for n, p in self.named_parameters():
+    #         if 'env' in n:
+    #             params.append(p)
 
-        return params
+    #     return params
     
 
-    def parameters_env_prime(self):
-        params = []
-        if self.args.rgb_input:
-            params += list(self.actor_prime.parameters())
+    # def parameters_env_prime(self):
+    #     params = []
+    #     if self.args.rgb_input:
+    #         params += list(self.actor_prime.parameters())
 
-        for n, p in self.named_parameters():
-            if 'env' in n:
-                params.append(p)
+    #     for n, p in self.named_parameters():
+    #         if 'env' in n:
+    #             params.append(p)
 
-        return params
+    #     return params
 
-    def parameters_inc(self):
-        params = []
-        if self.args.rgb_input:
-            params += list(self.inc.parameters())
+    # def parameters_inc(self):
+    #     params = []
+    #     if self.args.rgb_input:
+    #         params += list(self.inc.parameters())
 
-        for n, p in self.named_parameters():
-            if 'inc' in n:
-                params.append(p)
-        return params
+    #     for n, p in self.named_parameters():
+    #         if 'inc' in n:
+    #             params.append(p)
+    #     return params
     
 
     def forward_actor(self, inputs):
@@ -111,8 +114,8 @@ class LIOAgent(nn.Module):
         action_prime = self.actor_prime.forward(inputs)
         return action_prime
 
-    def forward_incentive(self, inputs, actions):
-        inc_reward = self.inc.forward(inputs, actions)
+    def forward_incentive(self, inputs, other_actions_1hot):
+        inc_reward = self.inc.forward(inputs, other_actions_1hot)
         return inc_reward
     
     
