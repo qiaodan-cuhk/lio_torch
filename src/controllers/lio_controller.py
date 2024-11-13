@@ -28,7 +28,7 @@ class LIOMAC(nn.Module):
         self.args_alg = args_alg
         input_shape = self._get_input_shape(scheme)
 
-        self.l_actions = args_env.actions_nums ????
+        self.l_actions = scheme.actions  # number of agents, for 1hot
 
         # 创建 self.agents = list[]
         self._build_agents(input_shape)
@@ -94,8 +94,7 @@ class LIOMAC(nn.Module):
 
         agent_inputs_inc = self._build_inputs(ep_batch, t_ep)  # [n,bs,...]
 
-        ?
-        # 重新shape action lists,检查数据维度!
+        """重新shape action lists,检查数据维度!"""
         actions_for_agents = list_actions.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)
         actions_for_agents = actions_for_agents.masked_select(self.mask_).view(ep_batch.batch_size, self.num_agents, self.num_agents-1).transpose(0, 1)
         # [n,bs,n-1]

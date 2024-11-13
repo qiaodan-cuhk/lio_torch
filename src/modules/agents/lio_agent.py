@@ -10,7 +10,7 @@ from ..networks import ActorConv, IncentiveConv, Actor, Incentive
 
 """这里 args env和alg考虑替换成scheme和group"""
 class LIOAgent(nn.Module):
-    def __init__(self, input_shape, agent_id, args_env, args_alg):
+    def __init__(self, input_shape, agent_id, args_env, args_alg, scheme):
         super(LIOAgent, self).__init__()
         self.args_env = args_env
         self.args_alg = args_alg
@@ -56,7 +56,7 @@ class LIOAgent(nn.Module):
         self.include_cost_in_chain_rule = self.args_alg.include_cost_in_chain_rule
         assert not (self.separate_cost_optimizer and self.include_cost_in_chain_rule)
 
-        other_actions_shape = l_actions*(n_agengts-1)?  # flattened 1hot other actions 
+        other_actions_shape = scheme.actions*(self.n_agents-1)  # flattened 1hot other actions 
 
         if args_env.rgb_input:
             self.actor = ActorConv(input_shape, args_env, args_alg)

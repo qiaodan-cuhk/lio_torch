@@ -3,6 +3,7 @@ from components.episode_buffer import EpisodeBatch
 import torch as th
 from torch.optim import RMSprop, Adam
 
+import numpy as np
 from ..modules.critics import REGISTRY as critic_resigtry
 
 # logger 要增加一些测量incentivize的metric
@@ -37,7 +38,7 @@ class LIOLearner:
 
         self.log_stats_t = -self.args.learner_log_interval - 1
 
-        self.gamma = 
+        self.gamma = args.gamma
 
         
 
@@ -186,7 +187,7 @@ class LIOLearner:
             buf_self_new = new_buffer[id]
 
             # 更新正则化系数
-            agent.update_reg_coeff(self, performance, prev_reward_env).  # 更新 agent.reg_coeff
+            agent.update_reg_coeff(self, performance, prev_reward_env)  # 更新 agent.reg_coeff
 
             list_reward_loss = []  # 用于表示当前agent对于所有其他agent奖励的loss，包括自己但是mask为0
 
@@ -214,7 +215,7 @@ class LIOLearner:
                         new_total_reward = new_buffer.reward
 
                     #计算每个agent的时候，用自己的loss，new buffer V loss & reward
-                    ? 检查命名buffer
+                    """检查命名buffer"""
                     self_new_obs_next = buf_self_new["next_obs"]
                     self_new_obs = buf_self_new["obs"]
                     new_self_v_next = self.critics[id].forward(self_new_obs_next)
@@ -230,12 +231,12 @@ class LIOLearner:
                     """在learner里，调用forward actor返回的是所有agent，所有动作的logits，考虑一下怎么 logits[i] 来只用某一个agent的，或者添加id"""
 
                     other_action_new = new_buffer[inc_id]["actions"]
-                    other_obs_new = new_buffer[inc_id]["obs"]?
+                    other_obs_new = new_buffer[inc_id]["obs"]
 
                     actor_logits_new = other_policy_new.forward(other_obs_new)
                     actor_probs_new = th.nn.functional.softmax(actor_logits_new)
                     # 把其他agent的选择动作 new buffer 处理成 1hot 用于乘法
-                    taken_action_1hot_new = util.process_actions(other_action_new, self.l_action) ？
+                    taken_action_1hot_new = self.process_actions(other_action_new, self.l_action)
                     log_probs_taken = th.log(
                         th.sum(actor_probs_new * taken_action_1hot_new, dim=1) + 1e-15)  
                     # action_taken [bs, 1hot len actions]，两个相乘得到选择的动作的prob
@@ -250,7 +251,7 @@ class LIOLearner:
 
                         if self.separate_cost_optimizer or self.reg == 'l1':
                             # 创建一个全为1的张量，大小与批次相同
-                            self.ones = th.ones(batch_size)  # 假设 batch_size 是当前批次的大小
+                            self.ones = th.ones(self.batch_size)  # 假设 batch_size 是当前批次的大小
                             self.gamma_prod = th.cumprod(self.ones * self.gamma, dim=0)  # 计算折扣因子的累积乘积
                             given_each_step = th.sum(th.abs(self.reward_function * reverse_1hot), dim=1)  # 计算每一步的奖励
                             total_given = th.sum(given_each_step * (self.gamma_prod / self.gamma))  # 计算总的给定奖励
@@ -292,7 +293,7 @@ class LIOLearner:
 
         r2_val = rewards + recieved_rewards
         if self.include_cost_in_chain_rule:
-            inc_loss = cost_ratio * inc_rewards_list.squeeze(:)
+            inc_loss = cost_ratio * inc_rewards_list.squeeze(-1)
             r2_val -= inc_loss
             
         v_td_error = r2_val + self.gamma * V_t_target_next - V_t
@@ -385,3 +386,11 @@ class LIOLearner:
         self.critic_optimizer.load_state_dict(
             th.load("{}/opt_critic.th".format(path), map_location=lambda storage, loc: storage))
 
+
+    def process_actions(actions, l_action):
+
+        n_steps = len(actions)
+        actions_1hot = np.zeros([n_steps, l_action], dtype=int)
+        actions_1hot[np.arange(n_steps), actions] = 1
+
+        return actions_1hot
