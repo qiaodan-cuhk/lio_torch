@@ -1,0 +1,118 @@
+{
+  "artifacts": [],
+  "command": "my_main",
+  "experiment": {
+    "base_dir": "/home/qiaodan/Projects/lio_torch/src",
+    "dependencies": [
+      "munch==2.5.0",
+      "numpy==1.19.0",
+      "PyYAML==5.3.1",
+      "sacred==0.8.1",
+      "torch==1.12.1+cu116"
+    ],
+    "mainfile": "main.py",
+    "name": "pymarl",
+    "repositories": [
+      {
+        "commit": "648a3eb749cc14b781934cfc021385691cbcf646",
+        "dirty": true,
+        "url": "git@github.com:qiaodan-cuhk/lio_torch.git"
+      },
+      {
+        "commit": "648a3eb749cc14b781934cfc021385691cbcf646",
+        "dirty": true,
+        "url": "git@github.com:qiaodan-cuhk/lio_torch.git"
+      },
+      {
+        "commit": "648a3eb749cc14b781934cfc021385691cbcf646",
+        "dirty": true,
+        "url": "git@github.com:qiaodan-cuhk/lio_torch.git"
+      }
+    ],
+    "sources": [
+      [
+        "main.py",
+        "_sources/main_449ad6f616a8f179fdf69af7c77b5ef2.py"
+      ],
+      [
+        "run.py",
+        "_sources/run_31849d3949ad0639245b6615a2e1b6a4.py"
+      ],
+      [
+        "utils/logging.py",
+        "_sources/logging_65f5f7566a9f1808d21dcae06c17d727.py"
+      ]
+    ]
+  },
+  "fail_trace": [
+    "Traceback (most recent call last):\n",
+    "  File \"/home/qiaodan/anaconda3/envs/LIO/lib/python3.7/site-packages/sacred/config/captured_function.py\", line 42, in captured_function\n    result = wrapped(*args, **kwargs)\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/main.py\", line 37, in my_main\n    run(_run, config, _log)\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/run.py\", line 53, in run\n    run_sequential(args=args, logger=logger)\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/run.py\", line 136, in run_sequential\n    mac = mac_REGISTRY[args.mac](buffer.scheme, groups, args)\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/controllers/lio_controller.py\", line 23, in __init__\n    self._build_agents(input_shape)\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/controllers/lio_controller.py\", line 170, in _build_agents\n    self.agents = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg, scheme=self.scheme) for i in range(self.num_agents)]\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/controllers/lio_controller.py\", line 170, in <listcomp>\n    self.agents = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg, scheme=self.scheme) for i in range(self.num_agents)]\n",
+    "  File \"/home/qiaodan/Projects/lio_torch/src/modules/agents/lio_agent.py\", line 17, in __init__\n    self.n_agents = args_env.num_agents\n",
+    "AttributeError: 'dict' object has no attribute 'num_agents'\n"
+  ],
+  "heartbeat": "2024-11-16T07:40:54.237532",
+  "host": {
+    "ENV": {},
+    "cpu": "AMD Ryzen Threadripper 3990X 64-Core Processor",
+    "gpus": {
+      "driver_version": "535.129.03",
+      "gpus": [
+        {
+          "model": "NVIDIA GeForce RTX 3090",
+          "persistence_mode": false,
+          "total_memory": 24576
+        },
+        {
+          "model": "NVIDIA GeForce RTX 3090",
+          "persistence_mode": false,
+          "total_memory": 24576
+        }
+      ]
+    },
+    "hostname": "ubun",
+    "os": [
+      "Linux",
+      "Linux-5.15.0-101-generic-x86_64-with-debian-bullseye-sid"
+    ],
+    "python_version": "3.7.13"
+  },
+  "meta": {
+    "command": "my_main",
+    "options": {
+      "--beat-interval": null,
+      "--capture": null,
+      "--comment": null,
+      "--debug": false,
+      "--enforce_clean": false,
+      "--file_storage": null,
+      "--force": false,
+      "--help": false,
+      "--loglevel": null,
+      "--mongo_db": null,
+      "--name": null,
+      "--pdb": false,
+      "--print-config": false,
+      "--priority": null,
+      "--queue": false,
+      "--s3": null,
+      "--sql": null,
+      "--tiny_db": null,
+      "--unobserved": false,
+      "COMMAND": null,
+      "UPDATE": [],
+      "help": false,
+      "with": false
+    }
+  },
+  "resources": [],
+  "result": null,
+  "start_time": "2024-11-16T07:40:34.023570",
+  "status": "FAILED",
+  "stop_time": "2024-11-16T07:40:54.243206"
+}

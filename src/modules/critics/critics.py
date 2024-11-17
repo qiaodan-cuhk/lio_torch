@@ -7,24 +7,30 @@ class Critic(nn.Module):
     # def __init__(self, input_shape, args_env, args_alg):
     def __init__(self, scheme, args):
         super(Critic, self).__init__()
-        
+
         self.args = args
-        self.n_actions = args.n_actions
         self.n_agents = args.n_agents
+        self.critic_h1 = args.alg_args.get('critic_h1')
+        self.critic_h2 = args.alg_args.get('critic_h2')
+        
 
         input_shape = self._get_input_shape(scheme)
-        self.output_type = "q" # "v"
+
+        """同样的问题，input shape在scheme里是 3，9，9"""
+        input_shape = input_shape[1]
+
+        self.output_type = args.agent_output_type   # "q" / "v"
 
         # Set up network layers
         self.fc1_value = nn.Sequential(
-                nn.Linear(input_shape, args.critic_h1), 
+                nn.Linear(input_shape, self.critic_h1), 
                 nn.ReLU()
             )  
         self.fc2_value = nn.Sequential(
-                nn.Linear(args.critic_h1, args.critic_h2),
+                nn.Linear(self.critic_h1, self.critic_h2),
                 nn.ReLU()
             )
-        self.fc3_value = nn.Linear(args.critic_h2, 1)
+        self.fc3_value = nn.Linear(self.critic_h2, 1)
 
     def forward(self, batch, t=None):
         
@@ -74,31 +80,41 @@ class Critic(nn.Module):
 
         return input_shape
     
+
+
 class CriticConv(nn.Module):
     def __init__(self, scheme, args):
         super(CriticConv, self).__init__()
 
         self.args = args
-        self.n_actions = args.n_actions
         self.n_agents = args.n_agents
 
+        self.obs_height = scheme.get("view_size")['vshape'][0]
+        self.obs_width = scheme.get("view_size")['vshape'][0]
+        self.n_filters = args.alg_args.get('n_filters')
+        self.kernel = args.alg_args.get('kernel')
+        self.stride = args.alg_args.get('stride')
+        self.critic_h1 = args.alg_args.get('critic_h1')
+        self.critic_h2 = args.alg_args.get('critic_h2')
+
         input_shape = self._get_input_shape(scheme)
-        self.output_type = "q" # "v"
+        self.output_type = args.agent_output_type   # "q" / "v"
 
         # Set up network layers
         self.conv_to_fc_value = nn.Sequential(
-                nn.Conv2d(3, args.n_filters, args.kernel, args.stride),
+                nn.Conv2d(3, self.n_filters, self.kernel, self.stride),
                 nn.ReLU(),
                 nn.Flatten(),
-                nn.Linear(args.n_filters * (args.obs_height - args.kernel[0] + 1) * (
-                        args.obs_width - args.kernel[1] + 1), args.critic_h1),
+                nn.Linear(self.n_filters * (self.obs_height - self.kernel[0] + 1) * (
+                        self.obs_width - self.kernel[1] + 1), self.critic_h1),
                 nn.ReLU()
             )
         self.fc2_value = nn.Sequential(
-                nn.Linear(args.critic_h1, args.critic_h2),
+                nn.Linear(self.critic_h1, self.critic_h2),
                 nn.ReLU()
             )
-        self.fc3_value = nn.Linear(args.critic_h2, 1)
+        self.fc3_value = nn.Linear(self.critic_h2, 1)
+    
     
     def forward(self, batch, t=None):
 

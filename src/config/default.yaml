@@ -55,7 +55,7 @@ repeat_id: 1
 label: "default_label"
 
 # --- SSD parameters ---
-rgb_input: True
+rgb_input: True  # True
 conv_out: 6
 conv_kernel: 3
 conv_stride: 1

@@ -1,9 +1,10 @@
-""" LIO Actor Critic Params"""
 # --- specific parameters ---
+#  LIO Actor Critic Params
 
 # action selector
-mask_before_softmax: False
+mask_before_softmax: True
 action_selector: "multinomial"
+agent_output_type:  pi_logits  # "q"
 
 onehot_actions: false
 
@@ -19,46 +20,44 @@ test_nepisode: 4
 test_interval: 200 # steps
 
 
-runner: "episode_lio"
-# use the actor critic to train
-agent_output_type: "q" # pi_logits,
-
-
-# special params
-lio_asymmetric: false # 如果agent num=2，那么就是true
-idx_recipient: 1  # 设定接收者id，在2 agents情况使用
-
-
-
-
-# rest
 name: "lio"
+agent: "lio"
+runner: "episode_lio"
 learner: "lio_learner"
 mixer:  # Mixer becomes None
 mac: "lio_mac"
-agent: "lio"
 double_q: True
+# critic_type: 
+use_actor_critic: true
+cuda_id: 1
+
+
+
+# critic params
+obs_individual_obs: false
+obs_other_actions: false
+obs_last_action: false
+obs_agent_id: false
+
+# 不可以使用 1e-4，会被识别成str
+# training params
+lr_actor: 0.0001
+lr_cost: 0.00001
+lr_opp: 0.001
+lr_reward: 0.001
+lr_v: 0.001
+optimizer: 'adam'
+reg: 'l1'
+reg_coeff: 0.0001  # float, or 'linear', or 'adaptive'
+tau: 0.01
 
 # update the target network every {} episodes
 target_update_interval: 20 # episodes
-
 gamma_env: 0.99
 gamma_inc: 0.995
-lr_env: 1e-4
-lr_inc: 1e-5
+lr_env: 0.0001
+lr_inc: 0.00001
 
-n_inc_actions: 3 # 0,1,2 = NO, +, -
-consider_others_inc: False
-
-
-# algorithms
-incentive: False
-incentive_ratio: 1.0
-incentive_cost:  0.1
-
-sim_loss_weight: 0.01
-sim_threshold: 0.7
-sim_horizon: 10
 
 use_cuda: True
 save_model: True # Save the models to disk
@@ -68,42 +67,58 @@ runner_log_interval: 1000 # Log runner stats (not test stats) every {} timesteps
 learner_log_interval: 1000 # Log training stats every {} timesteps
 use_tensorboard: True
 
-# other lio params
-entropy_coeff: 0.1
-asymmetric: false
-idx_recipient: 0  # only used if asymmetric=True
-budget_constraint: false
-include_cost_in_chain_rule: false
-separate_cost_optimizer: false
 
-r_multiplier: 1  #控制inc范围，整数
+# 用于 lio agent 实例化
+alg_args:
 
-# training params
-lr_actor: 1e-4
-lr_cost: 1e-5
-lr_opp: 1e-3
-lr_reward: 1e-3
-lr_v: 1e-3
-optimizer: 'adam'
-reg: 'l1'
-reg_coeff: 1e-4  # float, or 'linear', or 'adaptive'
-tau: 0.01
-use_actor_critic: true
+  # ego lio params
+  # rgb_input: True  # True
+  other_action_1hot: True
+  r_multiplier: 2.0  #控制inc范围，整数
+
+  n_inc_actions: 3 # 0,1,2 = NO, +, -
+  consider_others_inc: False
 
 
-# a2c params
-kernel: [3, 3]
-n_filters: 6
-stride: [1, 1]
+  # other lio params
+  lio_asymmetric: false # 如果agent num=2，那么就是true
+  idx_recipient: 1  # 设定接收者id，在2 agents情况使用
+  entropy_coeff: 0.1
+  budget_constraint: false
+  include_cost_in_chain_rule: false
+  separate_cost_optimizer: false
 
-actor_h1: 64
-actor_h2: 64
+  
 
-inc_h1: 64
-inc_h2: 64
 
-critic_h1: 64
-critic_h2: 64
+  # a2c NN params
+  kernel: [3, 3]
+  n_filters: 6
+  stride: [1, 1]
+
+  actor_h1: 64
+  actor_h2: 64
+
+  inc_h1: 64
+  inc_h2: 64
+
+  critic_h1: 64
+  critic_h2: 64
+
+  # algorithms
+  incentive: False
+  incentive_ratio: 1.0
+  incentive_cost:  0.1
+
+  sim_loss_weight: 0.01
+  sim_threshold: 0.7
+  sim_horizon: 10
+
+  
+
+  
+
+  
 
 
 # # Projects/lio/lio/alg/config_ssd_lio.yaml

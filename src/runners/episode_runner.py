@@ -106,9 +106,6 @@ class EpisodeRunner:
         self.batch.update(last_data, ts=self.t)
 
         # Select actions in the last stored state
-
-        """ 考虑添加 LIO 的 new episode 采样过程，使用 new policy 以及old inc action """ ，
-
         if 'homophily' in self.args.name:
             actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
             actions_inc = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode,agent_pos_replay = self.env.get_agent_pos())

@@ -51,7 +51,10 @@ class EpisodeRunner_LIO:
 
         terminated = False
         episode_return = 0
-        self.mac.init_hidden(batch_size=self.batch_size)
+
+        """没用RNN agent，不需要init hidden state"""
+        # self.mac.init_hidden(batch_size=self.batch_size)
+
         if self.args.mac == "separate_mac":
             self.mac.init_latent(batch_size=self.batch_size)
 
@@ -59,11 +62,11 @@ class EpisodeRunner_LIO:
 
             # transition 之前的信息
             pre_transition_data = {
-                "state": [self.env.get_state()],
-                "avail_actions": [self.env.get_avail_actions()],
-                "obs": [self.env.get_obs()],
-                "agent_pos": [self.env.get_agent_pos()],
-                "agent_orientation": [self.env.get_agent_orientation()],
+                "state": [self.env.get_state()],   # [3, 48, 18]
+                "avail_actions": [self.env.get_avail_actions()],  # [2,9]
+                "obs": [self.env.get_obs()],   # [2 agents, 3, 9, 9]
+                "agent_pos": [self.env.get_agent_pos()],   # [2, 2]
+                "agent_orientation": [self.env.get_agent_orientation()],   #  [2, 2]
             }
 
             self.batch.update(pre_transition_data, ts=self.t)

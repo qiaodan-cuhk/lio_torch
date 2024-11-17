@@ -2,9 +2,14 @@ import copy
 from components.episode_buffer import EpisodeBatch
 import torch as th
 from torch.optim import RMSprop, Adam
-
 import numpy as np
-from ..modules.critics import REGISTRY as critic_resigtry
+
+import sys
+import os
+# 添加全局路径
+sys.path.append('/home/qiaodan/Projects/lio_torch/src')
+
+from modules.critics import REGISTRY as critic_resigtry
 
 # logger 要增加一些测量incentivize的metric
 
@@ -31,25 +36,31 @@ class LIOLearner:
         self.inc_optimizers = [Adam(params=params, lr=args.lr_inc) for params in self.inc_params] 
 
         # 假设 self.critic 是一个包含多个独立 critic 网络的列表
-        self.critics = [critic_resigtry[args.critic_type](scheme, args) for i in range(self.n_agents)] # args.critic_type = rgb/not
+        if args.alg_args.get("rgb_input"):
+            critic_type = "ac_conv"
+        else:
+            critic_type = "ac"
+        self.critics = [critic_resigtry[critic_type](scheme, args) for i in range(self.n_agents)] # args.critic_type = rgb/not
         self.target_critics = copy.deepcopy(self.critics)
         self.critic_params = [list(critic.parameters()) for critic in self.critics]  # 每个 agent 的 critic 参数
         self.critic_optimizers = [Adam(params=params, lr=args.lr_v) for params in self.critic_params]  # 每个 agent 的 critic 优化器
 
         self.log_stats_t = -self.args.learner_log_interval - 1
 
-        self.gamma = args.gamma
-
+        self.gamma = args.gamma   # 也可以 gamma_env/inc
+        self.gamma_env = args.gamma_env
+        self.gamma_inc = args.gamma_inc
         
 
 
     def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
 
         # 把main actor参数复制给prime保证一致
-        for i, agent in enumerate(self.agents):
-            # 获取当前 agent 的 actor 和 actor_prime
-            actor_params = agent.actor.state_dict()  # 获取 actor 的参数
-            agent.actor_prime.load_state_dict(actor_params)  # 将参数加载到 actor_prime
+        self.update_prime_from_policy()
+        # for i, agent in enumerate(self.agents):
+        #     # 获取当前 agent 的 actor 和 actor_prime
+        #     actor_params = agent.actor.state_dict()  # 获取 actor 的参数
+        #     agent.actor_prime.load_state_dict(actor_params)  # 将参数加载到 actor_prime
 
         # Get the relevant quantities
         rewards = batch["reward"][:, :-1]
@@ -209,7 +220,7 @@ class LIOLearner:
                     buf_other.action_all, other_id, agent.l_action_for_r)
 
                     
-                    if self.include_cost_in_chain_rule:
+                    if agent.include_cost_in_chain_rule:
                         new_total_reward = new_buffer.reward + new_buffer.from_others - new_buffer.give_out_list
                     else:
                         new_total_reward = new_buffer.reward
@@ -249,7 +260,7 @@ class LIOLearner:
                     else:  # directly minimize given rewards
                         reverse_1hot = 1 - th.nn.functional.one_hot(self.agent_id, num_classes=self.n_agents).float()
 
-                        if self.separate_cost_optimizer or self.reg == 'l1':
+                        if agent.separate_cost_optimizer or self.reg == 'l1':
                             # 创建一个全为1的张量，大小与批次相同
                             self.ones = th.ones(self.batch_size)  # 假设 batch_size 是当前批次的大小
                             self.gamma_prod = th.cumprod(self.ones * self.gamma, dim=0)  # 计算折扣因子的累积乘积
@@ -258,7 +269,7 @@ class LIOLearner:
                         elif self.reg == 'l2':
                             total_given = th.sum(th.square(self.reward_function * reverse_1hot))  # 计算平方和
 
-                        if self.separate_cost_optimizer:
+                        if agent.separate_cost_optimizer:
                             reward_loss = th.sum(th.stack(list_reward_loss))  # 直接求和
                         else:
                             reward_loss = th.sum(th.stack(list_reward_loss)) + self.reg_coeff * total_given  # 结合正则化项
@@ -292,7 +303,10 @@ class LIOLearner:
         recieved_rewards = batch["recieved_rewards"][:, :-1]  # [bs,t-1,n,n,1]
 
         r2_val = rewards + recieved_rewards
-        if self.include_cost_in_chain_rule:
+
+        """注意逻辑"""
+        # for agent in:
+        if agent.include_cost_in_chain_rule:
             inc_loss = cost_ratio * inc_rewards_list.squeeze(-1)
             r2_val -= inc_loss
             
@@ -308,12 +322,14 @@ class LIOLearner:
         }
 
         # 平方loss，没有考虑mask
-        loss = (v_td_error ** 2).sum()
-        self.critic_optimizer.zero_grad()
-        loss.backward()
-        grad_norm = th.nn.utils.clip_grad_norm_(self.critic_params, self.args.grad_norm_clip)
-        self.critic_optimizer.step()
-        self.critic_training_steps += 1
+        """改成 list 形式"""
+        for agent in self.agents:
+            loss = (v_td_error ** 2).sum()
+            self.critic_optimizer.zero_grad()
+            loss.backward()
+            grad_norm = th.nn.utils.clip_grad_norm_(self.critic_params, self.args.grad_norm_clip)
+            self.critic_optimizer.step()
+            self.critic_training_steps += 1
 
         running_log["critic_loss"].append(loss.item())
         running_log["critic_grad_norm"].append(grad_norm)
@@ -328,17 +344,19 @@ class LIOLearner:
 
 
     def update_policy_from_prime(self):
-        """用 prime policy 更新主策略"""
-        for agent in self.agents:
-            agent.policy = agent.policy_prime
+        # 把actor参数复制给prime保证一致
+        for i, agent in enumerate(self.agents):
+            # 获取当前 agent 的 actor 和 actor_prime
+            actor_prime_params = agent.actor_prime.state_dict()  # 获取 actor_prime 的参数
+            agent.actor.load_state_dict(actor_prime_params)  # 将参数加载到 actor
 
     def update_prime_from_policy(self):
-        """用主策略更新 prime policy """
-        for agent in self.agents:
-            agent.policy = agent.policy_prime
+        # 把main actor参数复制给prime保证一致
+        for i, agent in enumerate(self.agents):
+            # 获取当前 agent 的 actor 和 actor_prime
+            actor_params = agent.actor.state_dict()  # 获取 actor 的参数
+            agent.actor_prime.load_state_dict(actor_params)  # 将参数加载到 actor_prime
 
-
- 
 
     """也考虑是不是 target critic """
 
@@ -359,7 +377,13 @@ class LIOLearner:
         self.mac.cuda()
         self.critics.cuda()
         self.target_critics.cuda()
-        self.target_mac.cuda()
+
+    def cuda(self):
+        self.mac.cuda()  
+        for critic in self.critics:
+            critic.cuda()  
+        for target_critic in self.target_critics:
+            target_critic.cuda()  
 
 
     def save_models(self, path):

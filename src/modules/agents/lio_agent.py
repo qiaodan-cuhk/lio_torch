@@ -10,103 +10,41 @@ from ..networks import ActorConv, IncentiveConv, Actor, Incentive
 
 """这里 args env和alg考虑替换成scheme和group"""
 class LIOAgent(nn.Module):
-    def __init__(self, input_shape, agent_id, args_env, args_alg, scheme):
+    def __init__(self, input_shape, agent_id, scheme, args):
         super(LIOAgent, self).__init__()
-        self.args_env = args_env
-        self.args_alg = args_alg
-        self.n_agents = args_env.num_agents
-        self.n_actions = args_env.num_actions
+        self.args_env = args.env_args
+        self.args_alg = args.alg_args
+        self.n_agents = self.args_env.get('num_agents', 0) # args_env.num_agents
+        self.n_actions = scheme.get("avail_actions")['vshape'][0]  # args_env.num_actions
+
         self.agent_id = agent_id
-
-        self.alg_name = self.args_alg.name  # "lio"
-        self.image_obs = isinstance(self.dim_obs, list)
-        self.agent_name = self.args_alg.agent
-        self.r_multiplier = self.args_alg.r_multiplier
-
-
-        self.actor_gradient = None
+        self.alg_name = args.name    # "lio"
+        self.agent_name = args.agent # "lio"
+        self.r_multiplier = self.args_alg.get('r_multiplier')
         # Default is allow the agent to give rewards
         self.can_give = True
-
-
-        # self.l_action = l_action
-        # self.dim_obs = dim_obs
-        # self.l_action_for_r = l_action_for_r if l_action_for_r else l_action
-
-        # 考虑是否添加 other id list
-        # self.list_other_id = list(range(0, self.n_agents))
-        # del self.list_other_id[self.agent_id]
-
-        self.entropy_coeff = self.args_alg.entropy_coeff
-        self.gamma = self.args_alg.gamma_env
+        self.rgb_input = args.rgb_input   # self.args_alg.get("rgb_input")
         
-        self.lr_actor = self.args_alg.lr_actor
-        self.lr_inc = self.args_alg.lr_inc
-        self.lr_v = self.args_alg.lr_v
-        self.lr_cost = self.args_alg.lr_cost # 不知道啥用
-
-        self.reg = self.args_alg.reg  # l1, l2
-        # self.reg_coeff = tf.placeholder(tf.float32, None, 'reg_coeff')
-        # self.reg_coeff = th.tensor(self.args_alg.reg_coeff, dtype=th.float32)  # 将 reg_coeff 转换为 PyTorch 张量
-        self.reg_coeff = self.initialize_reg_coeff()
-        self.tau = self.args_alg.tau
-
-        # 不知道干什么的
-        self.separate_cost_optimizer = self.args_alg.separate_cost_optimizer
-        self.include_cost_in_chain_rule = self.args_alg.include_cost_in_chain_rule
+        self.separate_cost_optimizer = self.args_alg.get('separate_cost_optimizer')
+        self.include_cost_in_chain_rule = self.args_alg.get('include_cost_in_chain_rule')
         assert not (self.separate_cost_optimizer and self.include_cost_in_chain_rule)
 
-        other_actions_shape = scheme.actions*(self.n_agents-1)  # flattened 1hot other actions 
+        # 不知道干什么的
+        # self.image_obs = isinstance(self.dim_obs, list)
+        # self.actor_gradient = None
 
-        if args_env.rgb_input:
-            self.actor = ActorConv(input_shape, args_env, args_alg)
-            self.actor_prime = ActorConv(input_shape, args_env, args_alg)
-            self.inc = IncentiveConv(input_shape+other_actions_shape, args_env, args_alg)
+        # other_actions_shape = scheme.actions*(self.n_agents-1)  # flattened 1hot other actions 
+        if self.rgb_input:
+            self.actor = ActorConv(input_shape, scheme, self.args_alg)
+            self.actor_prime = ActorConv(input_shape, scheme, self.args_alg)
+            self.inc = IncentiveConv(input_shape, scheme, self.args_alg, self.n_agents)
         else:
-            self.actor = Actor(input_shape, args_env, args_alg)
-            self.actor_prime = Actor(input_shape, args_env, args_alg)
-            self.inc = Incentive(input_shape+other_actions_shape, args_env, args_alg)
-
-        """lio代码里想要把激励限制在[0, r_multiplier]范围内，所以激励输出时先过一个sigmoid，
-        在之后调用的时候再乘一个r_multiplier的超参数，比如ER和cleanup里的r_multiplier是2.0，ipd里面是3.0"""
-
-    # """ self.mac.params_env/inc 调用网络参数，用不到了，learner里已经单独指定好了 """
-    # def parameters_env(self):
-    #     params = []
-    #     if self.args.rgb_input:
-    #         params += list(self.actor.parameters())
-
-    #     for n, p in self.named_parameters():
-    #         if 'env' in n:
-    #             params.append(p)
-
-    #     return params
-    
-
-    # def parameters_env_prime(self):
-    #     params = []
-    #     if self.args.rgb_input:
-    #         params += list(self.actor_prime.parameters())
-
-    #     for n, p in self.named_parameters():
-    #         if 'env' in n:
-    #             params.append(p)
-
-    #     return params
-
-    # def parameters_inc(self):
-    #     params = []
-    #     if self.args.rgb_input:
-    #         params += list(self.inc.parameters())
-
-    #     for n, p in self.named_parameters():
-    #         if 'inc' in n:
-    #             params.append(p)
-    #     return params
-    
+            self.actor = Actor(input_shape, scheme, self.args_alg)
+            self.actor_prime = Actor(input_shape, scheme, self.args_alg)
+            self.inc = Incentive(input_shape, scheme, self.args_alg, self.n_agents)
 
     def forward_actor(self, inputs):
-        action = self.actor.forward(inputs)
+        action = self.actor.forward(inputs)   # input = [bs, 3, height, width]
         return action
     
     # 用于 prime policy 采样
@@ -122,6 +60,11 @@ class LIOAgent(nn.Module):
     def set_can_give(self, can_give):
         self.can_give = can_give
 
+    def cuda(self):
+        self.actor.cuda()  # 将 actor 网络移动到 GPU
+        self.actor_prime.cuda()  # 将 actor_prime 网络移动到 GPU
+        self.inc.cuda()
+
 
     """ 考虑 self.step update """
     def initialize_reg_coeff(self):
@@ -136,7 +79,6 @@ class LIOAgent(nn.Module):
                 self.reg_coeff_step = 1.0 / self.args_env.t_max   # 考虑一下adaptive应该是什么
                 return 0.0  # 适应性正则化系数初始为0
             return 0.0
-
 
     def update_reg_coeff(self, performance, prev_reward_env):
         """更新正则化系数，用于 incentive reward 的gain作为loss """
