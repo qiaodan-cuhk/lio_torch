@@ -97,7 +97,7 @@ class EpisodeRunner_LIO:
 
             # 给激励，检查 batch update 以后数据格式
             if 'lio' in self.args.name:
-                recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+                recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions_env, self.batch, t_ep=self.t,
                                                         t_env=self.t_env, test_mode=test_mode,
                                                         agent_pos_replay = self.env.get_agent_pos())
                 # recieved代表每个人接收到的总奖励，give代表每个agent具体给了谁多少奖励

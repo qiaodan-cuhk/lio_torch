@@ -25,7 +25,7 @@ class LIOMAC(nn.Module):
 
         input_shape = self._get_input_shape(scheme) 
 
-        self.l_actions = scheme.get('avail_actions', 0) 
+        self.l_actions = scheme.get('avail_actions', 0)['vshape'][0]
         self._build_agents(input_shape)
         # 这里要考虑 agent 的Conv kernel长度，用view size还是scheme里的obs shape？
 
@@ -42,7 +42,7 @@ class LIOMAC(nn.Module):
 
         self.mask = th.ones(self.num_agents, self.num_agents, dtype=th.bool, device=self.args.device)
         self.mask.fill_diagonal_(False)
-        self.mask_ = self.mask.unsqueeze(0)  # [1,n,n]
+        self.mask_ = self.mask.unsqueeze(0)  # [1,n,n]  
 
         # 没使用RNN，所以不用考虑hidden states和init hidden
         # 激励函数的mask，禁止自己给自己奖励，创建一个diag为0的单位矩阵，我们考虑使用原始lio的方法，可以不用这个
@@ -85,25 +85,34 @@ class LIOMAC(nn.Module):
         agent_inputs_inc = self._build_inputs(ep_batch, t_ep)  # [n,bs,...]
 
         """重新shape action lists,检查数据维度!"""
-        actions_for_agents = list_actions.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)
+        actions_for_agents = list_actions.squeeze(-1)   # 1,2,1 -> 1,2  [bs, n agents]
+        actions_for_agents = actions_for_agents.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)
+        # 1,1,2 -> 1,2,2  [bs, n_agents, n_agents]
         actions_for_agents = actions_for_agents.masked_select(self.mask_).view(ep_batch.batch_size, self.num_agents, self.num_agents-1).transpose(0, 1)
-        # [n,bs,n-1]
+        # [n,bs,n-1] 代表每个agent，bs数据，拿掉自己的动作后其他agent的动作列表
 
         # list_rewards, total_reward_given_to_each_agent = self.forward_incentive(ep_batch, t_ep, list_actions, test_mode=test_mode) # [bs,n,num_action]
         list_rewards = []
-        total_reward_given_to_each_agent = np.zeros(self.num_agents)
+        # device = reward.device if th.is_tensor(reward) else th.device("cuda:0" if th.cuda.is_available() else "cpu")
+
+        total_reward_given_to_each_agent = th.zeros((ep_batch.batch_size, self.num_agents), device=self.args.device)
+
+
+        all_other_actions_1hot = self.get_action_others_1hot(actions_for_agents, self.l_actions)
+        # [n_agent, bs, n_agent-1, n_actions]
 
         for i in range(self.num_agents):
             agent = self.agents[i]
-
-            other_actions_1hot = self.get_action_others_1hot(actions_for_agents, i, self.l_actions)
+            other_actions_1hot = all_other_actions_1hot[i].view(ep_batch.batch_size,-1)
+            # [bs, n_agent-1, n_actions]
+            other_actions_1hot
 
             if agent.can_give:
-                reward = agent.forward_incentive(agent_inputs_inc[i], other_actions_1hot)
+                reward = agent.forward_incentive(agent_inputs_inc[i], other_actions_1hot)  # sigmoid output 
+                reward[-1][agent.agent_id] = 0
             else:
-                reward = np.zeros(self.num_agents) 
-            reward[agent.agent_id] = 0
-            # [n_agent, 1] 表示当前agent i给所有agent 0-n 的reward，自己给自己的是 0
+                reward = th.zeros((ep_batch.batch_size, self.num_agents), device=self.args.device) 
+            # [bs, n_agents] 表示当前agent i给所有agent 0-n 的reward，自己给自己的是 0
 
             total_reward_given_to_each_agent += reward
             # 表示了每个agent收到了总共多少reward
@@ -249,16 +258,19 @@ class LIOMAC(nn.Module):
         return inputs # [n,bs,-1]   [2, 1, 3, 9, 9]
     
 
-    def get_action_others_1hot(action_all, agent_id, l_action):
-        action_all = list(action_all)
-        del action_all[agent_id]
-        num_others = len(action_all)
-        actions_1hot = np.zeros([num_others, l_action], dtype=int)
-        actions_1hot[np.arange(num_others), action_all] = 1
+    def get_action_others_1hot(self, action_all, l_action):
+        
+        actions_1hot = F.one_hot(action_all, l_action)  # [n, bs, n-1] -> [n, bs, n-1, n_actions]
+
+        # action_all = list(action_all)
+        # del action_all[agent_id]
+        # num_others = len(action_all)
+        # actions_1hot = np.zeros([num_others, l_action], dtype=int)
+        # actions_1hot[np.arange(num_others), action_all] = 1
         # [[0, 1, 0],  # agent 1 选择了动作 1
         #  [0, 0, 1]]  # agent 2 选择了动作 2
 
-        return actions_1hot.flatten()
+        return actions_1hot
         # flattened_actions_1hot = [0, 1, 0, 0, 0, 1]  
         
 
