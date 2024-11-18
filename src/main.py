@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import collections
-from collections import Mapping
+from collections.abc import Mapping
 from os.path import dirname, abspath
 from copy import deepcopy
 from sacred import Experiment, SETTINGS
