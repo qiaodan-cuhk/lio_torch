@@ -8,16 +8,12 @@ This repo is based on homo-lio code with pymarl framework. We adapt LIO from tf 
 
 - v0.3 2024.11.10 保证一致性，从 list commit 下一个版本改成 ind learning，在mac里维护一个agent list，修改 learner train 的逻辑
 
+- v0.4 2024.11.19 功能函数已经搭建完毕，debug已经完成buffer、mac actor & inc network，剩余save model、learn、prime actor sample
 
-#### ToDo List
-- lio_controller line 74/74 有问题
-- lio_controller 里的 select reward incentive 函数没写
-- 需要考虑新写一个lio runner来控制buffer和reward
 
 #### Contributiors:
 - Jianing Yanglu
-- Dan
-
+- Dan Qiao
 
 
 
