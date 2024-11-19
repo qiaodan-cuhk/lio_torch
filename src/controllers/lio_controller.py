@@ -83,29 +83,20 @@ class LIOMAC(nn.Module):
                            agent_pos_replay = None):   
 
         agent_inputs_inc = self._build_inputs(ep_batch, t_ep)  # [n,bs,...]
-
-        """重新shape action lists,检查数据维度!"""
         actions_for_agents = list_actions.squeeze(-1)   # 1,2,1 -> 1,2  [bs, n agents]
         actions_for_agents = actions_for_agents.unsqueeze(1).expand(ep_batch.batch_size, self.num_agents, self.num_agents)
-        # 1,1,2 -> 1,2,2  [bs, n_agents, n_agents]
         actions_for_agents = actions_for_agents.masked_select(self.mask_).view(ep_batch.batch_size, self.num_agents, self.num_agents-1).transpose(0, 1)
         # [n,bs,n-1] 代表每个agent，bs数据，拿掉自己的动作后其他agent的动作列表
 
-        # list_rewards, total_reward_given_to_each_agent = self.forward_incentive(ep_batch, t_ep, list_actions, test_mode=test_mode) # [bs,n,num_action]
         list_rewards = []
-        # device = reward.device if th.is_tensor(reward) else th.device("cuda:0" if th.cuda.is_available() else "cpu")
-
         total_reward_given_to_each_agent = th.zeros((ep_batch.batch_size, self.num_agents), device=self.args.device)
-
 
         all_other_actions_1hot = self.get_action_others_1hot(actions_for_agents, self.l_actions)
         # [n_agent, bs, n_agent-1, n_actions]
 
         for i in range(self.num_agents):
             agent = self.agents[i]
-            other_actions_1hot = all_other_actions_1hot[i].view(ep_batch.batch_size,-1)
-            # [bs, n_agent-1, n_actions]
-            other_actions_1hot
+            other_actions_1hot = all_other_actions_1hot[i].view(ep_batch.batch_size,-1)   # [bs, n_agent-1, n_actions]
 
             if agent.can_give:
                 reward = agent.forward_incentive(agent_inputs_inc[i], other_actions_1hot)  # sigmoid output 
@@ -114,10 +105,8 @@ class LIOMAC(nn.Module):
                 reward = th.zeros((ep_batch.batch_size, self.num_agents), device=self.args.device) 
             # [bs, n_agents] 表示当前agent i给所有agent 0-n 的reward，自己给自己的是 0
 
-            total_reward_given_to_each_agent += reward
-            # 表示了每个agent收到了总共多少reward
-            list_rewards.append(reward)
-            # 表示所有agent的inc情况，用于runner里的reward buffer save和learner里的计算
+            total_reward_given_to_each_agent += reward   # 表示了每个agent收到了总共多少reward
+            list_rewards.append(reward)   # 表示所有agent的inc情况，用于runner里的reward buffer save和learner里的计算
 
         return total_reward_given_to_each_agent, list_rewards
         
@@ -180,6 +169,21 @@ class LIOMAC(nn.Module):
 
     def save_models(self, path):
         th.save(self.agents.state_dict(), "{}/agent.th".format(path))
+
+
+        # """保存所有智能体的模型"""
+        # # 创建保存目录
+        # if not os.path.exists(path):
+        #     os.makedirs(path)
+        
+        # # 保存每个智能体的模型
+        # for i, agent in enumerate(self.agents):
+        #     th.save(agent.state_dict(), f"{path}/agent_{i}.th")
+        
+        # # 如果有其他需要保存的组件，也在这里保存
+        # # 例如：保存激励网络
+        # if hasattr(self, 'incentive_net'):
+        #     th.save(self.incentive_net.state_dict(), f"{path}/incentive_net.th")
 
     def load_models(self, path):
         self.agents.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))

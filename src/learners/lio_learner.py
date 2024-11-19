@@ -373,10 +373,10 @@ class LIOLearner:
                 target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
                 
 
-    def cuda(self):
-        self.mac.cuda()
-        self.critics.cuda()
-        self.target_critics.cuda()
+    # def cuda(self):
+    #     self.mac.cuda()
+    #     self.critics.cuda()
+    #     self.target_critics.cuda()
 
     def cuda(self):
         self.mac.cuda()  

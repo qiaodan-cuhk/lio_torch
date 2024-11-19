@@ -2,6 +2,7 @@ from envs import REGISTRY as env_REGISTRY
 from functools import partial
 from components.episode_buffer import EpisodeBatch
 import numpy as np
+import torch as th
 
 
 class EpisodeRunner_LIO:
@@ -86,7 +87,7 @@ class EpisodeRunner_LIO:
             episode_return += reward
 
             post_transition_data = {
-                "actions": actions,
+                "actions": actions,   # 1,2,1
                 "reward": [(reward,)],
                 "terminated": [(terminated != env_info.get("episode_limit", False),)],
                 "clean_num": [(env_info["clean_num"],)],
@@ -101,15 +102,21 @@ class EpisodeRunner_LIO:
                                                         t_env=self.t_env, test_mode=test_mode,
                                                         agent_pos_replay = self.env.get_agent_pos())
                 # recieved代表每个人接收到的总奖励，give代表每个agent具体给了谁多少奖励
+                # 将 give_rewards_list 转换为 [bs, n_agents, n_agents-1] 形式
+                give_rewards_tensor = th.stack(give_rewards_list, dim=1)  # 将列表转换为tensor, bs, n_agents send, n_agents reciever
 
                 incentivize_data = {
                     "recieved_rewards": recieved_rewards,
-                    "give_other_rewards_list": give_rewards_list,
+                    "give_other_rewards_list": give_rewards_tensor,
                 }
                 self.batch.update(incentivize_data, ts=self.t)
 
             self.t += 1
 
+        # print("reward type:", type(reward), "shape:", np.array(reward).shape if hasattr(reward, 'shape') else None)
+        # print("clean_num type:", type(env_info["clean_num"]), "shape:", np.array(env_info["clean_num"]).shape if hasattr(env_info["clean_num"], 'shape') else None)
+        # print("apple_den type:", type(env_info["apple_den"]), "shape:", np.array(env_info["apple_den"]).shape if hasattr(env_info["apple_den"], 'shape') else None)
+        
         last_data = {
             "state": [self.env.get_state()],
             "avail_actions": [self.env.get_avail_actions()],
@@ -121,20 +128,20 @@ class EpisodeRunner_LIO:
 
         # Select actions in the last stored state
 
-        if 'lio' in self.args.name:
-            if prime:
-                actions = self.mac.select_actions_env_prime(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-            else:
-                actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-            # actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-            recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
-                                                        t_env=self.t_env, test_mode=test_mode,
-                                                        agent_pos_replay = self.env.get_agent_pos())
-            self.batch.update({ "recieved_rewards": recieved_rewards, "give_other_rewards_list": give_rewards_list,}, ts=self.t)
-        else:
-            actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
+        # if 'lio' in self.args.name:
+        #     if prime:
+        #         actions = self.mac.select_actions_env_prime(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+        #     else:
+        #         actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+        #     # actions = self.mac.select_actions_env(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
+        #     recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions, self.batch, t_ep=self.t,
+        #                                                 t_env=self.t_env, test_mode=test_mode,
+        #                                                 agent_pos_replay = self.env.get_agent_pos())
+        #     self.batch.update({ "recieved_rewards": recieved_rewards, "give_other_rewards_list": give_rewards_list,}, ts=self.t)
+        # else:
+        #     actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env,test_mode=test_mode)
 
-        self.batch.update({ "actions": actions,}, ts=self.t)
+        # self.batch.update({ "actions": actions,}, ts=self.t)
         
 
 

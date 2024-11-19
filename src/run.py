@@ -97,11 +97,11 @@ def run_sequential(args, logger):
 
     # Default/Base scheme
     scheme = {
-        "state": {"vshape": env_info["state_shape"]},
-        "obs": {"vshape": env_info["obs_shape"], "group": "agents"},
-        "actions": {"vshape": (1,), "group": "agents", "dtype": th.long},
-        "avail_actions": {"vshape": (env_info["n_actions"],), "group": "agents", "dtype": th.int},
-        "reward": {"vshape": (1,) if not args.ind_reward else (args.n_agents,)},
+        "state": {"vshape": env_info["state_shape"]},  # [1, 101, 3, 48, 18]
+        "obs": {"vshape": env_info["obs_shape"], "group": "agents"},  # [1, 101, 2, 3, 9, 9]
+        "actions": {"vshape": (1,), "group": "agents", "dtype": th.long},  # [1, 101, 2, 1]
+        "avail_actions": {"vshape": (env_info["n_actions"],), "group": "agents", "dtype": th.int},  # [1, 101, 2, 9]
+        "reward": {"vshape": (1,) if not args.ind_reward else (args.n_agents,)},  # [1, 101, 2]
         "terminated": {"vshape": (1,), "dtype": th.uint8},
         "clean_num": {"vshape": (args.n_agents,)},
         "apple_den": {"vshape": (args.n_agents,)},
@@ -110,13 +110,14 @@ def run_sequential(args, logger):
         "view_size": {"vshape": (args.env_args.get('view_size'),)},
         "state_dims": {"vshape": args.state_dims},   # [48, 18]
         "obs_dims": {"vshape": args.obs_dims},   # [9, 9]
+        "recieved_rewards": {"vshape": (1,), "group": "agents" },   # [1, 101, 2, 1]
+        "give_other_rewards_list": {"vshape": (args.n_agents,), "group": "agents" },   # [1, 101, 2, 2]
     }
 
-
-    if 'lio' in args.name:
-        scheme.update({
-            "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
-        }) 
+    # if 'lio' in args.name:
+    #     scheme.update({
+    #         "actions_inc": {"vshape": (args.n_agents, 1), "group": "agents", "dtype": th.long},  # (n,n,1)
+    #     }) 
 
     groups = {
         "agents": args.n_agents
@@ -201,6 +202,7 @@ def run_sequential(args, logger):
         if buffer.can_sample(args.batch_size):
 
             episode_sample = buffer.sample(args.batch_size)
+            # args.bs=16,sample 16条完整的episode transition data从 buffer [5000,101,2, 3,9,9]
             # Truncate batch to only filled timesteps
             max_ep_t = episode_sample.max_t_filled()
             episode_sample = episode_sample[:, :max_ep_t]
@@ -225,12 +227,13 @@ def run_sequential(args, logger):
             # epsilon & reg_coeff 考虑放到LIO agent里，或者runner里，每个time step直接进行decaying，加一个参数控制
             learner.train_reward(episode_sample, new_episode_sample, runner.t_env)
 
+
         """新增部分结束"""
         # Execute test runs once in a while
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
             """ 这里要加一个evaluate function """
-            eval_reward = evaluate_sequential(args, runner)
+            eval_reward = evaluate_sequential(args, runner)   # eval reward 为什么是None，上面写的似乎并不是返回一个reward，而是runner.run 4次
             logger.console_logger.info(eval_reward, "eval rewards")
 
             logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
@@ -240,7 +243,7 @@ def run_sequential(args, logger):
 
             last_test_T = runner.t_env
             for _ in range(n_test_runs):
-                runner.run(test_mode=True, prime=False)
+                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题
 
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
@@ -252,7 +255,8 @@ def run_sequential(args, logger):
 
             # learner should handle saving/loading -- delegate actor save/load to mac,
             # use appropriate filenames to do critics, optimizer states
-            learner.save_models(save_path)
+            """save models要改"""
+            # learner.save_models(save_path)
 
         episode += args.batch_size_run
 

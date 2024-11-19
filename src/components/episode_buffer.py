@@ -14,7 +14,7 @@ class EpisodeBatch:
                  device="cpu"):
         self.scheme = scheme.copy()
         self.groups = groups
-        self.batch_size = batch_size
+        self.batch_size = batch_size  # batch_size 表示这个批次包含多少个episode，1
         self.max_seq_length = max_seq_length
         self.preprocess = {} if preprocess is None else preprocess
         self.device = device
@@ -22,17 +22,18 @@ class EpisodeBatch:
         if data is not None:
             self.data = data
         else:
-            self.data = SN()
-            self.data.transition_data = {}
-            self.data.episode_data = {}
+            self.data = SN()   # SimpleNamespace对象 
+            self.data.transition_data = {}  # 存储每个时间步都会变化的数据
+            self.data.episode_data = {}  # 存储整个episode保持不变的数据
             self._setup_data(self.scheme, self.groups, batch_size, max_seq_length, self.preprocess)
 
     def _setup_data(self, scheme, groups, batch_size, max_seq_length, preprocess):
         if preprocess is not None:
-            for k in preprocess:
-                assert k in scheme
+            for k in preprocess: 
+                assert k in scheme   # 确保预处理的键在scheme中存在
                 new_k = preprocess[k][0]
                 transforms = preprocess[k][1]
+                # 获取新的键名和转换函数列表
 
                 vshape = self.scheme[k]["vshape"]
                 dtype = self.scheme[k]["dtype"]
@@ -52,6 +53,7 @@ class EpisodeBatch:
         scheme.update({
             "filled": {"vshape": (1,), "dtype": th.long},
         })
+        # 添加"filled"字段用于掩码
 
         for field_key, field_info in scheme.items():
             assert "vshape" in field_info, "Scheme must define vshape for {}".format(field_key)
@@ -63,12 +65,14 @@ class EpisodeBatch:
             if isinstance(vshape, int):
                 vshape = (vshape,)
 
+            # 如果字段中有group，添加组维度，比如obs需要
             if group:
                 assert group in groups, "Group {} must have its number of members defined in _groups_".format(group)
                 shape = (groups[group], *vshape)
             else:
                 shape = vshape
 
+            # 根据是否是episode常量，创建相应的存储空间，存到episode或者transition
             if episode_const:
                 self.data.episode_data[field_key] = th.zeros((batch_size, *shape), dtype=dtype, device=self.device)
             else:
