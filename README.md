@@ -1,7 +1,19 @@
 # Pytorch Version for LIO
 This repo is based on homo-lio code with pymarl framework. We adapt LIO from tf into torch in this code for further development on ID&MD and Arrival.
 
-#### Update Version
+
+
+## Installation instructions
+
+Set up a virtual environment and install the necessary packages using `requirements.txt` file.
+
+```bash
+conda create -n lio python=3.7
+conda activate lio
+pip install -r requirements.txt
+```
+
+## Update Version
 - v0.1 2024.10.22 Add lio_agent.py, lio_mac.py, modify train.py of LIO in pymarl.
 
 - v0.2 2024.10.28 Add lio_learner. 
@@ -10,8 +22,9 @@ This repo is based on homo-lio code with pymarl framework. We adapt LIO from tf 
 
 - v0.4 2024.11.19 功能函数已经搭建完毕，debug已经完成buffer、mac actor & inc network，剩余save model、learn、prime actor sample
 
+- v0.5 2024.11.24 重新wrap conda环境，使用python 3.7兼容；更新超梯度计算方式，要使用save grad，手动update grad方式
 
-#### Contributiors:
+## Contributiors:
 - Jianing Yanglu
 - Dan Qiao
 
@@ -27,8 +40,8 @@ Our method is built on [PyMARL](https://github.com/oxwhirl/pymarl) and Sequentia
 Set up a virtual environment and install the necessary packages using `requirements.txt` file.
 
 ```bash
-conda create -n SSD python=3.7
-conda activate SSD
+conda create -n lio python=3.7
+conda activate lio
 pip install -r requirements.txt
 ```
 
