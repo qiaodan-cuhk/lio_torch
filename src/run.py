@@ -15,6 +15,10 @@ from controllers import REGISTRY as mac_REGISTRY
 from components.episode_buffer import ReplayBuffer
 from components.transforms import OneHot
 
+# 获取项目根目录路径
+PROJECT_ROOT = dirname(dirname(abspath(__file__)))  # src的上一级目录
+
+
 
 def run(_run, _config, _log):
     # enable anomaly detection to find the operation that failed to compute its gradient
@@ -210,13 +214,17 @@ def run_sequential(args, logger):
                 episode_sample.to(args.device)
             
             # 在 train 里要考虑 reward 的增加和减少，update value func + policy func + target func
-            learner.train(episode_sample, runner.t_env)
+            learner.train(episode_sample, runner.t_env, 1)
+            """1应该是episode num，但是他没有参与到train更新过程"""
             
 
             # 这里需要用 new/prime policy 采样轨迹，以及 policy 计算 other obs
             episode_batch_new = runner.run(test_mode=False, prime=True)
             buffer.insert_episode_batch(episode_batch_new)
+
+            # sample latest buffer episode 
             new_episode_sample = buffer.sample_latest(args.batch_size)
+
             # Truncate batch to only filled timesteps
             new_max_ep_t = new_episode_sample.max_t_filled()
             new_episode_sample = new_episode_sample[:, :new_max_ep_t]
@@ -243,20 +251,19 @@ def run_sequential(args, logger):
 
             last_test_T = runner.t_env
             for _ in range(n_test_runs):
-                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题
+                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题，目前看似乎没有计入episode
 
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
             model_save_time = runner.t_env
-            save_path = os.path.join(args.local_results_path, "models", args.unique_token, str(runner.t_env))
-            #"results/models/{}".format(unique_token)
+            save_path = os.path.join(PROJECT_ROOT, args.local_results_path, "models", args.unique_token, str(runner.t_env))
+            #"lio_torch/results/models/{}".format(unique_token)
             os.makedirs(save_path, exist_ok=True)
             logger.console_logger.info("Saving models to {}".format(save_path))
 
             # learner should handle saving/loading -- delegate actor save/load to mac,
             # use appropriate filenames to do critics, optimizer states
-            """save models要改"""
-            # learner.save_models(save_path)
+            learner.save_models(save_path)
 
         episode += args.batch_size_run
 

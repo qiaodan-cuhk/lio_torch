@@ -117,7 +117,7 @@ class LIOMAC(nn.Module):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         avail_actions = ep_batch["avail_actions"][:, t]
 
-        agent_outs = th.concat([self.agents[i].forward_actor(self.agent_inputs[i]) for i in range(self.num_agents)], dim=0) # 把两个 [1,9] 拼成 [n_agents, 9]
+        agent_outs = th.cat([self.agents[i].forward_actor(self.agent_inputs[i]) for i in range(self.num_agents)], dim=0) # 把两个 [1,9] 拼成 [n_agents, 9]
         # 这里是actor网络输出的 [1,18]
         # # [bs, n_agents, num_actions, 1]
 
@@ -142,7 +142,7 @@ class LIOMAC(nn.Module):
         self.agent_inputs = self._build_inputs(ep_batch, t)  # [n,bs,...]
         avail_actions = ep_batch["avail_actions"][:, t]
 
-        agent_outs = th.concat([self.agents[i].forward_actor_prime(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)  # 这里是actor网络输出的 [bs, n_actions, 1]
+        agent_outs = th.cat([self.agents[i].forward_actor_prime(self.agent_inputs[i]) for i in range(self.num_agents)], dim=-1)  # 这里是actor网络输出的 [bs, n_actions, 1]
         # [bs, n_agents, num_actions, 1]
 
         # Softmax the agent outputs if they're policy logits
@@ -158,8 +158,6 @@ class LIOMAC(nn.Module):
         return agent_outs.view(ep_batch.batch_size, self.num_agents, -1) # [bs,n,num_action]
     
 
-    """ TO DO LIST """
-    # load save cuda 的逻辑要按照list来改
     def load_state(self, other_mac):
         self.agents.load_state_dict(other_mac.agent.state_dict())
 
@@ -168,30 +166,31 @@ class LIOMAC(nn.Module):
             agent.cuda()
 
     def save_models(self, path):
-        th.save(self.agents.state_dict(), "{}/agent.th".format(path))
+        # th.save(self.agents.state_dict(), "{}/agent.th".format(path))
+        agents_dict = {}
+        for i, agent in enumerate(self.agents):
+            agents_dict.update({
+                f"agent_{i}_actor": agent.actor.state_dict(),
+                f"agent_{i}_actor_prime": agent.actor_prime.state_dict(),
+                f"agent_{i}_inc": agent.inc.state_dict()
+            })
+        th.save(agents_dict, f"{path}/agents.th")
 
-
-        # """保存所有智能体的模型"""
-        # # 创建保存目录
-        # if not os.path.exists(path):
-        #     os.makedirs(path)
-        
-        # # 保存每个智能体的模型
-        # for i, agent in enumerate(self.agents):
-        #     th.save(agent.state_dict(), f"{path}/agent_{i}.th")
-        
-        # # 如果有其他需要保存的组件，也在这里保存
-        # # 例如：保存激励网络
-        # if hasattr(self, 'incentive_net'):
-        #     th.save(self.incentive_net.state_dict(), f"{path}/incentive_net.th")
 
     def load_models(self, path):
-        self.agents.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+        # self.agents.load_state_dict(th.load("{}/agent.th".format(path), map_location=lambda storage, loc: storage))
+        agents_dict = th.load(f"{path}/agents.th", map_location=self.args.device)
+        for i, agent in enumerate(self.agents):
+            agent.actor.load_state_dict(agents_dict[f"agent_{i}_actor"])
+            agent.actor_prime.load_state_dict(agents_dict[f"agent_{i}_actor_prime"])
+            agent.inc.load_state_dict(agents_dict[f"agent_{i}_inc"])
+
 
     # ind learning, list agents; param sharing, one agent
     def _build_agents(self, input_shape):
         # self.agents = agent_REGISTRY[self.args.agent](input_shape, agent_id=i, args_env=self.args_env, args_alg=self.args_alg) 
         self.agents = [agent_REGISTRY[self.args.agent](input_shape, agent_id=i, scheme=self.scheme, args=self.args) for i in range(self.num_agents)]
+
 
 
     """这里要考虑检查lio源代码，actor和inc的input是不是一样的，有没有inc多了一部分other actions

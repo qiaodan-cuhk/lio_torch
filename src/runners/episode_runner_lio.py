@@ -96,7 +96,6 @@ class EpisodeRunner_LIO:
             self.batch.update(post_transition_data, ts=self.t)
 
 
-            # 给激励，检查 batch update 以后数据格式
             if 'lio' in self.args.name:
                 recieved_rewards, give_rewards_list = self.mac.select_actions_inc(actions_env, self.batch, t_ep=self.t,
                                                         t_env=self.t_env, test_mode=test_mode,

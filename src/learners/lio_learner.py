@@ -373,11 +373,6 @@ class LIOLearner:
                 target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
                 
 
-    # def cuda(self):
-    #     self.mac.cuda()
-    #     self.critics.cuda()
-    #     self.target_critics.cuda()
-
     def cuda(self):
         self.mac.cuda()  
         for critic in self.critics:
@@ -388,27 +383,34 @@ class LIOLearner:
 
     def save_models(self, path):
         self.mac.save_models(path)
-        th.save(self.critics.state_dict(), "{}/critic.th".format(path))
-
-        th.save(self.actor_optimizer.state_dict(), "{}/opt_actor.th".format(path))
-        th.save(self.critic_optimizer.state_dict(), "{}/opt_critic.th".format(path))
-        th.save(self.inc_optimizer.state_dict(), "{}/opt_inc.th".format(path))
+        critics_dict = {f"critic_{i}": critic.state_dict() for i, critic in enumerate(self.critics)}
+        th.save(critics_dict, f"{path}/critics.th")
+        
+        actor_optimizers_dict = {f"actor_opt_{i}": opt.state_dict() for i, opt in enumerate(self.actor_optimizers)}
+        th.save(actor_optimizers_dict, f"{path}/actor_opt.th")
+        inc_optimizers_dict = {f"inc_opt_{i}": opt.state_dict() for i, opt in enumerate(self.inc_optimizers)}
+        th.save(inc_optimizers_dict, f"{path}/inc_opt.th")
+        critic_optimizers_dict = {f"critic_opt_{i}": opt.state_dict() for i, opt in enumerate(self.critic_optimizers)}
+        th.save(critic_optimizers_dict, f"{path}/critic_opt.th")
 
 
     def load_models(self, path):
         self.mac.load_models(path)
-        self.critics.load_state_dict(
-            th.load("{}/critic.th".format(path), map_location=lambda storage, loc: storage))
-        # Not quite right but I don't want to save target networks
-        self.target_mac.load_models(path)
-        self.target_critics.load_state_dict(self.critics.state_dict())
+        critics_dict = th.load(f"{path}/critics.th", map_location=self.args.device)
+        for i, critic in enumerate(self.critics):
+            critic.load_state_dict(critics_dict[f"critic_{i}"])
+        self.target_critics = copy.deepcopy(self.critics)
 
-        self.actor_optimizer.load_state_dict(
-            th.load("{}/opt_actor.th".format(path), map_location=lambda storage, loc: storage))
-        self.critic_optimizer.load_state_dict(
-            th.load("{}/opt_critic.th".format(path), map_location=lambda storage, loc: storage))
-        self.critic_optimizer.load_state_dict(
-            th.load("{}/opt_critic.th".format(path), map_location=lambda storage, loc: storage))
+        actor_opt_dict = th.load(f"{path}/actor_opt.th", map_location=self.args.device)
+        for i, opt in enumerate(self.actor_optimizers):
+            opt.load_state_dict(actor_opt_dict[f"actor_opt_{i}"])
+        inc_opt_dict = th.load(f"{path}/inc_opt.th", map_location=self.args.device)
+        for i, opt in enumerate(self.inc_optimizers):
+            opt.load_state_dict(inc_opt_dict[f"inc_opt_{i}"])
+        critic_opt_dict = th.load(f"{path}/critic_opt.th", map_location=self.args.device)
+        for i, opt in enumerate(self.critic_optimizers):
+            opt.load_state_dict(critic_opt_dict[f"critic_opt_{i}"])
+        
 
 
     def process_actions(actions, l_action):
