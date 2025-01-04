@@ -107,6 +107,7 @@ class EpisodeBatch:
             if type(v) == th.Tensor:
                 v = v.clone().detach()
             else:
+                v = np.array(v) # 将列表转换为numpy.ndarray,加速数据转换
                 v = th.tensor(v, dtype=dtype, device=self.device).clone().detach()
             # v = th.tensor(v).type(dtype).to(self.device)
             self._check_safe_view(v, target[k][_slices])

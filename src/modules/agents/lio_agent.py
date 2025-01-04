@@ -17,6 +17,7 @@ class LIOAgent(nn.Module):
         self.n_agents = self.args_env.get('num_agents', 0) # args_env.num_agents
         self.n_actions = scheme.get("avail_actions")['vshape'][0]  # args_env.num_actions
 
+        self.device = args.device
         self.agent_id = agent_id
         self.alg_name = args.name    # "lio"
         self.agent_name = args.agent # "lio"
@@ -43,6 +44,9 @@ class LIOAgent(nn.Module):
             self.actor_prime = Actor(input_shape, scheme, self.args_alg)
             self.inc = Incentive(input_shape, scheme, self.args_alg, self.n_agents)
 
+        # 在agent层面初始化 reg coeff
+        self.reg_coeff = self.initialize_reg_coeff()
+
     def forward_actor(self, inputs):
         action = self.actor.forward(inputs)   # input = [bs, 3, height, width]
         return action
@@ -61,9 +65,13 @@ class LIOAgent(nn.Module):
         self.can_give = can_give
 
     def cuda(self):
-        self.actor.cuda()  # 将 actor 网络移动到 GPU
-        self.actor_prime.cuda()  # 将 actor_prime 网络移动到 GPU
-        self.inc.cuda()
+        self.actor.to(self.device)  # 将 actor 网络移动到指定设备
+        self.actor_prime.to(self.device)  # 将 actor_prime 网络移动到指定设备
+        self.inc.to(self.device)  # 将 inc 网络移动到指定设备
+
+        # self.actor.cuda()  # 将 actor 网络移动到 GPU
+        # self.actor_prime.cuda()  # 将 actor_prime 网络移动到 GPU
+        # self.inc.cuda()
 
 
     """ 考虑 self.step update """
@@ -72,19 +80,25 @@ class LIOAgent(nn.Module):
         if isinstance(self.args_alg.reg_coeff, float):
             return self.args_alg.reg_coeff
         else:
+            max_episode_nums = self.args_env.t_max / self.args_env.episode_limit
+            eval_period = self.args_env.test_nepisode
             if self.args_alg.reg_coeff == 'linear':
-                self.reg_coeff_step = 1.0 / self.args_env.t_max   # 这里本来是除以episode，后续考虑是否加一个counter/参数
+                self.reg_coeff_step = 1.0 / max_episode_nums  
                 return 0.0
             elif self.args_alg.reg_coeff == 'adaptive':
-                self.reg_coeff_step = 1.0 / self.args_env.t_max   # 考虑一下adaptive应该是什么
-                return 0.0  # 适应性正则化系数初始为0
+                self.reg_coeff_step = 1.0 / (max_episode_nums / eval_period)  
+                return 0.0  
             return 0.0
 
     def update_reg_coeff(self, performance, prev_reward_env):
         """更新正则化系数，用于 incentive reward 的gain作为loss """
         if self.args_alg.reg_coeff == 'adaptive':
-            sign = 1 if performance > prev_reward_env else -1
-            self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
+            if performance == prev_reward_env:
+                pass
+            else:
+                delta = (performance - prev_reward_env) / (abs(prev_reward_env) + 1e-8)  # 归一化差异
+                sign = 1 if delta > 0 else -1
+                self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
         elif self.args_alg.reg_coeff == 'linear':
             self.reg_coeff = min(1.0, self.reg_coeff + self.reg_coeff_step)
 

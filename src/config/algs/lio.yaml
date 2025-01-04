@@ -23,13 +23,13 @@ test_interval: 2000 # steps  20 episodes测试一回，一回跑四次
 name: "lio"
 agent: "lio"
 runner: "episode_lio"
-learner: "lio_learner"
+learner: "lio_learner"   # 使用old如果要测试不创建新网络的版本
 mixer:  # Mixer becomes None
 mac: "lio_mac"
 double_q: True
 # critic_type: 
 use_actor_critic: true
-cuda_id: 1
+cuda_id: 0
 
 
 

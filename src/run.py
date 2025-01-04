@@ -28,8 +28,8 @@ def run(_run, _config, _log):
     _config = args_sanity_check(_config, _log)
 
     args = SN(**_config)
-    # args.device = f"cuda: {args.cuda_id}" if args.use_cuda else "cpu"
-    args.device = f"cuda" if args.use_cuda else "cpu"
+    # args.device = f"cuda" if args.use_cuda else "cpu"
+    args.device = f"cuda:{args.cuda_id}" if args.use_cuda else "cpu"
 
     # setup loggers
     logger = Logger(_log)
@@ -136,9 +136,12 @@ def run_sequential(args, logger):
         preprocess = None
 
 
+    # buffer = ReplayBuffer(scheme, groups, args.buffer_size, env_info["episode_limit"] + 1,
+    #                     preprocess=preprocess,
+    #                     device="cpu" if args.buffer_cpu_only else args.device)
     buffer = ReplayBuffer(scheme, groups, args.buffer_size, env_info["episode_limit"] + 1,
                         preprocess=preprocess,
-                        device="cpu" if args.buffer_cpu_only else args.device)
+                        device=args.device)
 
     # Setup multiagent controller here
     mac = mac_REGISTRY[args.mac](buffer.scheme, groups, args)
@@ -181,6 +184,8 @@ def run_sequential(args, logger):
         learner.load_models(model_path)
         runner.t_env = timestep_to_load
 
+
+        """这是初始化时第一次evaluate，可以考虑删掉"""
         if args.evaluate or args.save_replay:
             evaluate_sequential(args, runner)
             return
@@ -194,7 +199,11 @@ def run_sequential(args, logger):
     start_time = time.time()
     last_time = start_time
 
+    eval_reward = 0
+    prev_eval_reward = 0
+
     logger.console_logger.info("Beginning training for {} timesteps".format(args.t_max))
+
 
     while runner.t_env <= args.t_max:
 
@@ -231,10 +240,9 @@ def run_sequential(args, logger):
             if new_episode_sample.device != args.device:
                 new_episode_sample.to(args.device)
 
-            # 更新 reward inc policy，并且把 prime policy 赋值给 policy
-            # epsilon & reg_coeff 考虑放到LIO agent里，或者runner里，每个time step直接进行decaying，加一个参数控制
             learner.train_reward(episode_sample, new_episode_sample, runner.t_env)
 
+        
 
         """新增部分结束"""
         # Execute test runs once in a while
@@ -242,8 +250,11 @@ def run_sequential(args, logger):
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
             """ 这里要加一个evaluate function """
             eval_reward = evaluate_sequential(args, runner)   # eval reward 为什么是None，上面写的似乎并不是返回一个reward，而是runner.run 4次
-            logger.console_logger.info(eval_reward, "eval rewards")
 
+            if learner.agents[0].args_alg.reg_coeff == 'adaptive':
+                learner.update_coeff(eval_reward, prev_eval_reward)
+
+            logger.console_logger.info("Eval reward: {}".format(eval_reward))
             logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
             logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
                 time_left(last_time, last_test_T, runner.t_env, args.t_max), time_str(time.time() - start_time)))
@@ -251,8 +262,7 @@ def run_sequential(args, logger):
 
             last_test_T = runner.t_env
             for _ in range(n_test_runs):
-                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题，目前看似乎没有计入episode
-
+                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题，目前看似乎没有计入episode，为什么要跑四次？还不记录数据
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
             model_save_time = runner.t_env
@@ -264,6 +274,10 @@ def run_sequential(args, logger):
             # learner should handle saving/loading -- delegate actor save/load to mac,
             # use appropriate filenames to do critics, optimizer states
             learner.save_models(save_path)
+
+        # update reg coeff
+        learner.update_coeff(eval_reward, prev_eval_reward)
+        logger.console_logger.info("reg_coeff: {}".format(learner.agents[0].reg_coeff))
 
         episode += args.batch_size_run
 

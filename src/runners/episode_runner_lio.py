@@ -126,6 +126,8 @@ class EpisodeRunner_LIO:
         self.batch.update(last_data, ts=self.t)
 
         # Select actions in the last stored state
+        # 原来的episode runner是要的，因为homophily算法基于DQN，需要每个state的action确定Q value
+        # 但是lio不需要next state action，只需要下一个state就行了，SAC依赖 V value
 
         # if 'lio' in self.args.name:
         #     if prime:
