@@ -185,7 +185,7 @@ def run_sequential(args, logger):
         runner.t_env = timestep_to_load
 
 
-        """这是初始化时第一次evaluate，可以考虑删掉"""
+        """这是初始化时第一次evaluate"""
         if args.evaluate or args.save_replay:
             evaluate_sequential(args, runner)
             return
@@ -248,13 +248,13 @@ def run_sequential(args, logger):
         # Execute test runs once in a while
         n_test_runs = max(1, args.test_nepisode // runner.batch_size)
         if (runner.t_env - last_test_T) / args.test_interval >= 1.0:
-            """ 这里要加一个evaluate function """
-            eval_reward = evaluate_sequential(args, runner)   # eval reward 为什么是None，上面写的似乎并不是返回一个reward，而是runner.run 4次
+            # eval_reward = evaluate_sequential(args, runner)   
+            # 这里 evaluate sequential没有返回任何东西，内置在了logger里
 
-            if learner.agents[0].args_alg.reg_coeff == 'adaptive':
+            if learner.agents[0].reg_coeff == 'adaptive':
                 learner.update_coeff(eval_reward, prev_eval_reward)
 
-            logger.console_logger.info("Eval reward: {}".format(eval_reward))
+            # logger.console_logger.info("Eval reward: {}".format(eval_reward))
             logger.console_logger.info("t_env: {} / {}".format(runner.t_env, args.t_max))
             logger.console_logger.info("Estimated time left: {}. Time passed: {}".format(
                 time_left(last_time, last_test_T, runner.t_env, args.t_max), time_str(time.time() - start_time)))
@@ -262,7 +262,7 @@ def run_sequential(args, logger):
 
             last_test_T = runner.t_env
             for _ in range(n_test_runs):
-                runner.run(test_mode=True, prime=False)  # 这里跑四次也有问题，目前看似乎没有计入episode，为什么要跑四次？还不记录数据
+                runner.run(test_mode=True, prime=False)  # 这里相当于调用了 evaluate sequential
 
         if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
             model_save_time = runner.t_env
@@ -277,7 +277,7 @@ def run_sequential(args, logger):
 
         # update reg coeff
         learner.update_coeff(eval_reward, prev_eval_reward)
-        logger.console_logger.info("reg_coeff: {}".format(learner.agents[0].reg_coeff))
+        # logger.console_logger.info("reg_coeff: {}".format(learner.agents[0].reg_coeff))
 
         episode += args.batch_size_run
 

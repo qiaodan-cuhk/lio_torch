@@ -206,11 +206,10 @@ class LIOLearner:
                     continue
 
                 new_policy = copy.deepcopy(self.agents[other_id].actor)  # mac.agents.actor
-                # 使用存储的梯度手动更新参数
+                # 使用存储的梯度手动更新参数，保留超梯度
                 for param, grad in zip(new_policy.parameters(), self.actor_gradients[other_id]):
                     if grad is not None:
-                        # param.data.add_(-self.args.lr_actor * grad)
-                        # 创建新参数,保持计算图连接
+                        # param.data.add_(-self.args.lr_actor * grad)  # 创建新参数,保持计算图连接
                         param.data = param.data - self.args.lr_actor * grad
             
                 agent.list_policy_new[other_id] = new_policy
@@ -220,10 +219,7 @@ class LIOLearner:
         # 这层for循环对应要更新的inc网络的agent
         for id, agent in enumerate(self.agents):
             assert id == agent.agent_id
-
-            # # 更新正则化系数
-            # agent.update_reg_coeff(self, performance, prev_reward_env)  # 更新 agent.reg_coeff
-
+            
             if agent.can_give:
                 buf_self_new = new_buffer[id]
                 new_obs = buf_self_new["obs"][:, :-1, id]

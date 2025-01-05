@@ -45,7 +45,8 @@ class LIOAgent(nn.Module):
             self.inc = Incentive(input_shape, scheme, self.args_alg, self.n_agents)
 
         # 在agent层面初始化 reg coeff
-        self.reg_coeff = self.initialize_reg_coeff()
+
+        self.reg_coeff = self.initialize_reg_coeff(args.reg_coeff)
 
     def forward_actor(self, inputs):
         action = self.actor.forward(inputs)   # input = [bs, 3, height, width]
@@ -75,31 +76,35 @@ class LIOAgent(nn.Module):
 
 
     """ 考虑 self.step update """
-    def initialize_reg_coeff(self):
+    def initialize_reg_coeff(self, reg_coeff):
         """初始化正则化系数"""
-        if isinstance(self.args_alg.reg_coeff, float):
-            return self.args_alg.reg_coeff
+        if isinstance(reg_coeff, float):
+            self.reg_coeff_type = 'constant'
+            return reg_coeff
         else:
             max_episode_nums = self.args_env.t_max / self.args_env.episode_limit
             eval_period = self.args_env.test_nepisode
-            if self.args_alg.reg_coeff == 'linear':
+            self.reg_coeff_type = reg_coeff
+            if reg_coeff == 'linear':
                 self.reg_coeff_step = 1.0 / max_episode_nums  
                 return 0.0
-            elif self.args_alg.reg_coeff == 'adaptive':
+            elif reg_coeff == 'adaptive':
                 self.reg_coeff_step = 1.0 / (max_episode_nums / eval_period)  
                 return 0.0  
             return 0.0
 
     def update_reg_coeff(self, performance, prev_reward_env):
         """更新正则化系数，用于 incentive reward 的gain作为loss """
-        if self.args_alg.reg_coeff == 'adaptive':
+        if self.reg_coeff_type == 'adaptive':
             if performance == prev_reward_env:
                 pass
             else:
                 delta = (performance - prev_reward_env) / (abs(prev_reward_env) + 1e-8)  # 归一化差异
                 sign = 1 if delta > 0 else -1
                 self.reg_coeff = max(0, min(1.0, self.reg_coeff + sign * self.reg_coeff_step))
-        elif self.args_alg.reg_coeff == 'linear':
+        elif self.reg_coeff_type == 'linear':
             self.reg_coeff = min(1.0, self.reg_coeff + self.reg_coeff_step)
+        elif self.reg_coeff_type == 'constant':
+            pass
 
             
